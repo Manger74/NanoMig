@@ -1,6 +1,6 @@
 set board "tang_nano20k"
 set config "amiga"
-source scripts/update_xml.tcl
+source scripts/update_xml_kick_switch_lite.tcl
 
 set_device GW2AR-LV18QN88C8/I7 -name GW2AR-18C
 
