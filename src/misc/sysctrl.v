@@ -44,8 +44,8 @@ module sysctrl (
   output reg [1:0]  system_fastmem,
   output reg	    system_joy_swap,
   output reg [2:0]  system_volume,
-  output reg	    system_stereo_mix
-
+  output reg	    system_stereo_mix,
+  output reg [7:0]  system_lcd_v_pos
 );
 
 reg [3:0] state;
@@ -96,8 +96,8 @@ always @(posedge clk) begin
 
       buttons_irq_enable <= 1'b1;  // allow buttons irq
       int_ack <= 8'h00;
-      coldboot = 1'b1;      // reset is actually the power-on-reset
-      sys_int = 1'b1;       // coldboot interrupt
+      coldboot <= 1'b1;      // reset is actually the power-on-reset
+      sys_int <= 1'b1;       // coldboot interrupt
       jtagsel <= 1'b0;      
 
       // OSD value defaults. These should be sane defaults, but the MCU
@@ -232,6 +232,8 @@ always @(posedge clk) begin
 		   if(id == "A") system_volume <= data_in[2:0];	
 		   // value "M": Stereo Mix disabled(0) or enabled(1) 			
 		   if(id == "M") system_stereo_mix <= data_in[0];
+		   // value "B": lcd vertical position (used in lcd variant, only)
+		   if(id == "B") system_lcd_v_pos <= data_in;
                 end
             end
 

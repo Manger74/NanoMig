@@ -1,22 +1,20 @@
 /*
-    top_lcd.sv - Minimig on tang nano 20k toplevel
+    top.sv - NanoMig on Lattice
 */ 
-
-/* we need two copies in case of 256k kickroms
-     openFPGALoader --external-flash -o 0x400000 kick13.rom
-     openFPGALoader --external-flash -o 0x440000 kick13.rom
-   or a single copy of e.g. a 512k diag rom
-     openFPGALoader --external-flash -o 0x400000 DiagROM
-*/
+ 
+`define LATTICE
+`define TMDS_BY_LOGIC
+`define INFER_DPRAM
+// `define ENABLE_TG68K
+`define DISABLE_IDE
  
 module top(
   input			clk,
 
-  input			reset, // button S2
-  input			user, // button S1
+  input			reset,
+  input			user,
 
-  output [5:0]	leds_n,
-  output		ws2812,
+  output [4:0]	leds_n,
 
   // spi flash interface
   output		mspi_cs,
@@ -33,73 +31,73 @@ module top(
   output		O_sdram_cas_n, // columns address select
   output		O_sdram_ras_n, // row address select
   output		O_sdram_wen_n, // write enable
-  inout [31:0]	IO_sdram_dq,   // 32 bit bidirectional data bus
-  output [10:0]	O_sdram_addr,  // 11 bit multiplexed address bus
-  output [1:0]	O_sdram_ba,    // two banks
-  output [3:0]	O_sdram_dqm,   // 32/4
+  inout [15:0]	IO_sdram_dq, // 16 bit bidirectional data bus
+  output [12:0]	O_sdram_addr, // 13 bit multiplexed address bus
+  output [1:0]	O_sdram_ba, // two banks
+  output [1:0]	O_sdram_dqm, // 16/4
 
-  // internal lcd
-  output		lcd_dclk,
-  output		lcd_hs, // lcd horizontal synchronization
-  output		lcd_vs, // lcd vertical synchronization        
-  output		lcd_bl, // lcd backlight enable
-  output		lcd_de, // lcd data enable     
-  output [4:0]	lcd_r,  // lcd red
-  output [5:0]	lcd_g,  // lcd green
-  output [4:0]	lcd_b,  // lcd blue
+  // generic IO, used for mouse & joystick
+  input [5:0]	js0,
+
+  // spare IO, used for 2nd joystick
+  input [5:0]   js1,
+
+  // MIDI/UART
+  input			midi_in,
+  output		midi_out,
 
   // SD card slot
   output		sd_clk,
   inout			sd_cmd, // MOSI
   inout [3:0]	sd_dat, // 0: MISO
-
-  // SPI connection to on-board BL616 for 3921 assemblies 
-  // By default an external connection is used with a M0S Dock
-  input                 spi_sclk,// in 
-  input                 spi_csn, // in
-  output                spi_dir, // out
-  input                 spi_dat, // in
-  output                spi_irqn,// out
 	   
-  // audio
-  output		hp_bck,
-  output		hp_ws,
-  output		hp_din,
-  output		pa_en
-);
+  // SPI connection to ob-board BL616. By default an external
+  // connection is used with a M0S Dock
+  input			spi_sclk,
+  input			spi_csn,
+  output		spi_dir,
+  input			spi_dat,
+  output		spi_irqn,
 
-wire [5:0]	leds;
+  // hdmi/tdms
+  output [7:0] tmds
+);
+  
+// physcial dsub9 joystick & mouse port 1 and 2
+wire [5:0] db9_joy0 = { !js0[5], !js0[0], !js0[2], !js0[1], !js0[4], !js0[3] };   
+wire [5:0] db9_joy1 = { !js1[5], !js1[0], !js1[2], !js1[1], !js1[4], !js1[3] }; 
    
-assign leds[5] = |sd_wr;
-assign leds[4] = |sd_rd;
+wire [4:0]	leds;
+assign leds[4] = |{sd_wr,sd_rd};
 assign leds_n = ~leds;  
 
 // ============================== clock generation ===========================
+   
+// HDMI clock:  140 MHz
+// Pixel clock: 28 MHz (HDMI/5)
+// SDRAM and flash clock: 84 MHz
+// Amiga clock: 7.0 (Pixel/4)
    
 `define PIXEL_CLOCK 28375160
 
 wire clk_pixel_x5;   
 wire pll_lock;   
-wire clk_7;
 wire clk_28m;
 wire clk_85m;
 wire clk_85m_shifted;
 wire clk_pixel;
 
-amigaclks amigaclks (
-	.clk_in(clk),
-	.clk_7m(clk_7), // Unused
-	.clk_28m(clk_28m),
-	.clk_85m(clk_85m),
-	.clk_sdram(clk_85m_shifted),
-	.locked(pll_lock),
-	.vidmode(1'b1),
-	.clk_tmds(clk_pixel_x5),
-	.clk_pixel(clk_pixel),
-	.video_locked()
+pll_142m pll_142m (
+	.CLKI( clk ),               // 50Mhz in
+	.CLKOP( clk_pixel_x5),      // 140 Mhz
+	.CLKOS( clk_85m ),          // 84 Mhz
+	.CLKOS2( clk_85m_shifted ), // 84 Mhz shifted by 216° 
+	.CLKOS3( clk_pixel ),       // 28 Mhz
+    .LOCK( pll_lock )
 );
 
-wire	clk_28m = clk_pixel;
+assign clk_28m = clk_pixel;
+
 wire	clk7_en;   
 wire	clk7n_en;   
 
@@ -111,39 +109,49 @@ wire [1:0] osd_fastmem;         // 0=None, 1=2M, 2=4M
 wire [1:0] osd_floppy_drives;
 wire       osd_floppy_turbo;
 wire       osd_floppy_wrprot;
+`ifndef DISABLE_IDE
 wire       osd_ide_enable;
+`endif
 wire [1:0] osd_chipset;         // 0=OCS-A500, 1=OCS-A1000, 2=ECS
 wire       osd_video_mode;      // PAL (0=PAL, 1=NTSC)
+wire [1:0] osd_video_screen;    // 0=standard, 1=overscan, 2=wide screen (jailbars)
 wire [1:0] osd_video_filter;
 wire [1:0] osd_video_scanlines;
 wire       osd_joy_swap;        // 0=off, 1=on
 wire [2:0] osd_volume;          // Mute=0, 1=25%, 2=50%, 3=75%, 4=100%
-wire [7:0] osd_lcd_v_pos;       // -20 .. 20 vertical offset for lcd adjustment
+wire       osd_stereo_mix;      // 0=off, 1=on
 
 wire	   rom_download_in_progress;
 
 // generate a reset for some time after rom has been initialized
 reg [15:0] reset_cnt;
 always @(negedge clk_28m) begin
-    if(!pll_lock || !rom_done || reset || osd_reset || kbd_reset || rom_download_in_progress)
+    if(!pll_lock || !rom_done || reset || osd_reset || kbd_reset || rom_download_in_progress )
         reset_cnt <= 16'hffff;
     else if(reset_cnt != 0)
-        reset_cnt = reset_cnt - 16'd1;
+        reset_cnt <= reset_cnt - 16'd1;
 end
 
+// this is the reset that goes into the nanomig itself
 wire cpu_reset = |reset_cnt;
 wire sdram_ready;
 
 // -------------------------- M0S MCU interface -----------------------
+// intn and dout are outputs driven by the FPGA to the MCU
+// din, ss and clk are inputs coming from the MCU
+// onboard connection to on-board BL616
 
-// connect to ws2812 led
-wire [23:0] ws2812_color;
-ws2812 ws2812_inst (
-    .clk(clk_28m),
-	.reset(!pll_lock),
-    .color(ws2812_color),
-    .data(ws2812)
-);
+wire spi_io_dout;
+wire spi_intn;   
+   
+assign spi_dir = spi_io_dout;
+assign spi_irqn = spi_intn;
+
+// switch between internal SPI connected to the on-board bl616
+// or to the external one possibly connected to a M0S Dock
+wire spi_io_din = spi_dat;
+wire spi_io_ss = spi_csn;
+wire spi_io_clk = spi_sclk;
 
 // interface to M0S MCU
 wire       mcu_sys_strobe;        // mcu message byte valid for sysctrl
@@ -163,11 +171,11 @@ mcu_spi mcu (
 	 .clk(clk_28m),
 	 .reset(!pll_lock),
 
-     // SPI interface to FPGA Companion
-     .spi_io_ss ( spi_csn  ),
-     .spi_io_clk( spi_sclk ),
-     .spi_io_din( spi_dat  ),
-     .spi_io_dout( spi_dir ),
+	 // SPI interface to FPGA Companion
+     .spi_io_ss ( spi_io_ss ),
+     .spi_io_clk( spi_io_clk  ),
+     .spi_io_din( spi_io_din  ),
+     .spi_io_dout( spi_io_dout ),
 
 	 // byte wide data in/out to the submodules
      .mcu_sys_strobe(mcu_sys_strobe),
@@ -302,7 +310,7 @@ always @(posedge clk_28m, negedge pll_lock) begin
       endcase	 
    end   
 end   
-   
+
 sd_card #(
     .CLK_DIV(3'd0),                  // for 28 Mhz clock
     .IMAGE_FIFO_BITS(9)              // ROM transfer fifo size = 512
@@ -332,8 +340,8 @@ sd_card #(
     .rom_image_accepted(rom_accepted),
     .rom_image_data_available(rom_data_available),
     .rom_image_data(rom_data),
-    .rom_image_data_strobe(rom_data_strobe),		   
-
+    .rom_image_data_strobe(rom_data_strobe),
+		   
     // interrupt to signal communication request
     .irq(sdc_int),
     .iack(sdc_iack),
@@ -371,7 +379,7 @@ hid hid (
 
         // input local db9 port events to be sent to MCU. Changes also trigger
         // an interrupt, so the MCU doesn't have to poll for joystick events
-        .db9_port( 6'd0 ),
+        .db9_port( db9_joy0 ),
         .irq( hid_int ),
         .iack( hid_iack ),
 
@@ -401,23 +409,26 @@ sysctrl sysctrl (
 		.system_floppy_drives(osd_floppy_drives),
 		.system_floppy_turbo(osd_floppy_turbo),
 		.system_floppy_wrprot(osd_floppy_wrprot),
+`ifndef DISABLE_IDE
 		.system_ide_enable(osd_ide_enable),
+`endif
 	    .system_chipset(osd_chipset),
 		.system_video_mode(osd_video_mode),
+		.system_video_screen(osd_video_screen),
 		.system_video_filter(osd_video_filter),
 		.system_video_scanlines(osd_video_scanlines),
 		.system_chipmem(osd_chipmem),
-		.system_fastmem(osd_fastmem),
 		.system_slowmem(osd_slowmem),
+		.system_fastmem(osd_fastmem),
         .system_joy_swap(osd_joy_swap),
     	.system_volume(osd_volume),
-        .system_lcd_v_pos(osd_lcd_v_pos),
-				 // 				 
-        .int_out_n(spi_irqn),
+		.system_stereo_mix(osd_stereo_mix),
+				 
+        .int_out_n(spi_intn),
         .int_in( { 4'b0000, sdc_int, 1'b0, hid_int, 1'b0 }),
         .int_ack( int_ack ),
 
-        .buttons( {reset, user} ),
+        .buttons( {user, reset} ),
         .leds(),
         .color(ws2812_color)
 );
@@ -427,16 +438,11 @@ wire hs_n, vs_n;
 wire [3:0] red;
 wire [3:0] green;
 wire [3:0] blue;
-
-wire [5:0] osd_r;
-wire [5:0] osd_g;
-wire [5:0] osd_b;
-
-// map to rgb565
-assign lcd_r = osd_r[5:1];
-assign lcd_g = osd_g;
-assign lcd_b = osd_b[5:1];  
    
+wire [5:0] video_red;
+wire [5:0] video_green;
+wire [5:0] video_blue;   
+
 osd_u8g2 osd_u8g2 (
         .clk(clk_28m),
         .reset(!pll_lock),
@@ -452,9 +458,9 @@ osd_u8g2 osd_u8g2 (
         .g_in({green, 2'b00}),
         .b_in({blue,  2'b00}),
 
-        .r_out(osd_r),
-        .g_out(osd_g),
-        .b_out(osd_b)
+        .r_out(video_red),
+        .g_out(video_green),
+        .b_out(video_blue)
 );   
 
 /* ---------------------- Minimig chipset ----------------------- */
@@ -463,18 +469,40 @@ osd_u8g2 osd_u8g2 (
 wire [14:0] audio_left;
 wire [14:0] audio_right;   
 
-// map first HID/USB joystick into second amiga joystick port
-// wire in db9 joystick
-wire [7:0] joystick = { 
-	  (hid_joy0[7] | hid_joy1[7]), 
-	  (hid_joy0[6] | hid_joy1[6]), 
-	  (hid_joy0[5] | hid_joy1[5]), 
-	  (hid_joy0[4] | hid_joy1[4]),
-	  (hid_joy0[3] | hid_joy1[3]), 
-	  (hid_joy0[2] | hid_joy1[2]),
-	  (hid_joy0[1] | hid_joy1[1]),
-	  (hid_joy0[0] | hid_joy1[0]) };   
-   
+// Map Joysticks 
+
+            // map first HID/USB joystick into first amiga joystick port
+            // wire in db9 joystick & mouse
+wire [7:0] physical_port_1 = { 
+               hid_joy0[7], 
+               hid_joy0[6], 
+              (hid_joy0[5] | db9_joy0[5]), 
+              (hid_joy0[4] | db9_joy0[4]),
+              (hid_joy0[3] | db9_joy0[3]), 
+              (hid_joy0[2] | db9_joy0[2]),
+              (hid_joy0[1] | db9_joy0[1]),
+              (hid_joy0[0] | db9_joy0[0]) };   
+
+            // map second HID/USB joystick into second amiga joystick port
+            // wire in db9 joystick
+wire [7:0] physical_port_2 = { 
+               hid_joy1[7], 
+               hid_joy1[6], 
+			  (hid_joy1[5] | db9_joy1[5]),
+              (hid_joy1[4] | db9_joy1[4]),
+              (hid_joy1[3] | db9_joy1[3]), 
+              (hid_joy1[2] | db9_joy1[2]),
+              (hid_joy1[1] | db9_joy1[1]),
+              (hid_joy1[0] | db9_joy1[0]) }; 
+              
+wire [7:0] joystick0;
+wire [7:0] joystick1;
+
+// Swap Joysticks 
+
+assign joystick0 = osd_joy_swap ? physical_port_1 : physical_port_2;
+assign joystick1 = osd_joy_swap ? physical_port_2 : physical_port_1;
+
 wire [23:1] cpu_a;
 wire cpu_as_n, cpu_lds_n, cpu_uds_n;
 wire cpu_rw, cpu_dtack_n;
@@ -496,10 +524,10 @@ wire fastram_lds;
 wire fastram_uds;
 wire [15:0] fastram_dout;
 wire [15:0] fastram_din;
-wire [1:0] fastram_be = {fastram_uds,fastram_lds};
+wire [1:0] fastram_be = {fastram_uds,fastram_lds};  
 wire fastram_wr;
 wire fastram_ready;
-
+   
 wire [15:0] sdram_dout;
 
 assign ram_din = sdram_dout;
@@ -510,8 +538,10 @@ wire [7:0] memory_config = { 4'b0_000, osd_slowmem, osd_chipmem };
 wire [2:0] fastram_config = { 1'b0, osd_fastmem };   
 wire [3:0] floppy_config = { osd_floppy_drives, osd_floppy_wrprot, osd_floppy_turbo };
 wire [3:0] video_config = { osd_video_filter, osd_video_scanlines };   
+`ifndef DISABLE_IDE
 wire [5:0] ide_config = { 5'b00000, osd_ide_enable };   
-   
+`endif
+
 nanomig nanomig
 (
  .clk_sys(clk_28m),
@@ -523,14 +553,18 @@ nanomig nanomig
 
  .pwr_led(leds[0]),
  .fdd_led(leds[1]),
+`ifndef DISABLE_IDE
  .hdd_led(leds[2]),
+`endif
  
  .memory_config(memory_config),
  .fastram_config(fastram_config),
  .chipset_config(chipset_config),
  .floppy_config(floppy_config),
  .video_config(video_config),
+`ifndef DISABLE_IDE
  .ide_config(ide_config),
+`endif
 
  // video
  .hs(hs_n), // horizontal sync
@@ -551,10 +585,10 @@ nanomig nanomig
  .kbd_mouse_level(kbd_mouse_level),  
  .kbd_mouse_type(kbd_mouse_type),  
  .kbd_mouse_data(kbd_mouse_data),
- .joystick0(joystick),
- .joystick1(8'h00),
+ .joystick0(joystick0),
+ .joystick1(joystick1),
 				 
- // sd card interface for floppy disk emulation
+ // sd card interface for floppy disk and hdd emulation
  .sdc_img_size(sd_img_size),
  .sdc_img_mounted(sd_img_mounted), 
  .sdc_rd(sd_rd),
@@ -585,7 +619,8 @@ nanomig nanomig
  .fastram_dout(fastram_dout),
  .fastram_din(fastram_din),
  .fastram_wr(fastram_wr),
- .fastram_ready(fastram_ready));
+ .fastram_ready(fastram_ready)
+);
 
 wire           flash_ready;  
 wire           mem_ready = sdram_ready && flash_ready && pll_lock;  
@@ -593,8 +628,8 @@ wire           mem_ready = sdram_ready && flash_ready && pll_lock;
 reg            start_rom_copy;
 reg            mem_ready_D;
 
-// geneate a start_rom_copy signal once flash and SDRAM are initialized
-always @(posedge clk_28m or negedge pll_lock) begin
+// generate a start_rom_copy signal once flash and SDRAM are initialized
+always @(posedge clk_85m or negedge pll_lock) begin
    if(!pll_lock) begin
       start_rom_copy <= 1'b0;
       mem_ready_D <= 1'b0;
@@ -627,20 +662,20 @@ reg [17:0]  flash_ram_addr;
 reg         flash_ram_write;
 reg [5:0]   flash_cnt;  
 
-always @(posedge clk_28m or negedge mem_ready) begin
+always @(posedge clk_85m or negedge mem_ready) begin
     if(!mem_ready) begin
        flash_addr <= 22'h200000;          // 4MB flash offset (word address)
        flash_ram_addr <= 18'h0;           // write into 512k sdram segment used for kick rom
        word_count <= 22'h40001;           // 512k bytes ROM data = 256k words
 
-       state <= 5'h0;
+       state <= 3'h0;
        flash_ram_write <= 1'b0;
        flash_cs <= 1'b0;        
        flash_cnt <= 6'd0;
     end else begin
         if((start_rom_copy || state == 23) && (word_count != 0)) begin
             flash_cs <= 1'b1;
-            flash_cnt <= 6'd45; // >= 45 @ 85MHz
+            flash_cnt <= 6'd45; // >= 30 @ 32MHz -- AMR, increase to 45 @ 85.5MHz
         end else begin
             if(flash_cnt != 0) flash_cnt <= flash_cnt - 6'd1;
             if(flash_busy)     flash_cs <= 1'b0;
@@ -666,8 +701,8 @@ always @(posedge clk_28m or negedge mem_ready) begin
         // advance ram write state
         if(state != 0)  state <= state + 3'd1;
         if(state == 3)  flash_ram_write <= 1'b1;
-        if(state == 18) flash_ram_write <= 1'b0;
-        if(state == 21) flash_ram_addr <= flash_ram_addr + 18'd1;
+        if(state == 18)  flash_ram_write <= 1'b0;
+        if(state == 21)  flash_ram_addr <= flash_ram_addr + 18'd1;
     end
 end
 
@@ -685,6 +720,7 @@ always @(posedge clk_28m)
 wire        sdram_access  = (!ram_oe_n || !ram_we_n);  
 wire	    sdram_rw      = !ram_we_n;
    
+
 // multiplex ram input to the three sources
 //  1. the minimig addressing ram during regular operation 
 //  2. flash rom being copied to ram after core load
@@ -731,11 +767,11 @@ wire [21:0] sdram_addr    =
 			rom_download_in_progress?{4'b1111, rom_data_addr}:  // rom download from sd card
 			minimig_is_accessing_256k_rom?{ram_a[22:19],1'b0,ram_a[17:1]}:  // regular rom access into 256k kickstart
 			ram_a[22:1];                                        // regular operation
-   
+
 assign O_sdram_clk = clk_85m_shifted;   
 assign O_sdram_cke = 1'b1;  // clock enable
    
-sdram #(.DATA_WIDTH(32), .RASCAS_DELAY(2), .RAS_WIDTH(11), .CAS_WIDTH(8) ) sdram (
+sdram sdram (
 	.sd_data    ( IO_sdram_dq   ), // 32 bit bidirectional data bus
 	.sd_addr    ( O_sdram_addr  ), // 11 bit multiplexed address bus
 	.sd_dqm     ( O_sdram_dqm   ), // two byte masks
@@ -752,13 +788,14 @@ sdram #(.DATA_WIDTH(32), .RASCAS_DELAY(2), .RAS_WIDTH(11), .CAS_WIDTH(8) ) sdram
 	.ready      ( sdram_ready   ), // ram is ready and has been initialized
 	.sync       ( sdram_sync    ), // rising edge of sync is begin of a memory cycle
 	.refresh    ( sdram_refresh ), // refresh cycle
+
 	.din        ( sdram_din     ), // data input from chipset/cpu
 	.dout       ( sdram_dout    ),
 	.addr       ( sdram_addr    ), // 22 bit word address
 	.ds         ( sdram_be      ), // upper/lower data strobe
 	.cs         ( sdram_cs      ), // cpu/chipset requests read/wrie
-	.we         ( sdram_we      ), // cpu/chipset requests write
-			 
+	.we         ( sdram_we      ),  // cpu/chipset requests write
+
 	.p2_din        ( fastram_din     ), // data input from chipset/cpu
 	.p2_dout       ( fastram_dout    ),
 	.p2_addr       ( fastram_addr    ), // 22 bit word address
@@ -788,130 +825,120 @@ flash flash (
     .mspi_do   ( mspi_do     )
 );
 
-/* -------------------- LCD video and audio -------------------- */
-
-wire vreset, vpal, interlace;
-video_analyzer video_analyzer (
-    .clk       ( clk_28m   ),
-    .hs        ( hs_n      ),
-    .vs        ( vs_n      ),
-    .pal       ( vpal      ),
-    .short_frame ( short_frame ),
-    .screen    ( 2'd1 ),
-    .interlace ( interlace ),
-    .vreset    ( vreset    )
-);
-   
-assign lcd_dclk = clk_pixel;
-assign lcd_hs = hs_n;
-assign lcd_vs = vs_n;
-assign lcd_bl = !cpu_reset;   // enable display backlight once cpu is out of reset
-
-reg [9:0] hcnt;   // max 1023
-reg [9:0] vcnt;   // max 626
-
-// generate the 800x480 pixel display enable signal 
-assign lcd_de = (hcnt < 10'd800) && (vcnt < 10'd480);
-
-always @(posedge clk_pixel) begin
-   reg       last_vs_n, last_hs_n;
-
-   last_hs_n <= lcd_hs;   
-
-   // rising edge/end of hsync
-   if(lcd_hs && !last_hs_n) begin
-      hcnt <= 10'd980;
-
-      last_vs_n <= lcd_vs;   
-      if(lcd_vs && !last_vs_n) begin
-         vcnt <= 10'd946 - { {2{osd_lcd_v_pos[7]}}, osd_lcd_v_pos };
-      end else
-        vcnt <= vcnt + 10'd1;    
-   end else
-      hcnt <= hcnt + 10'd1;    
-end
-   
-/* ------------------- audio processing --------------- */
-
-// MAX98357A
-   
-// EN is actually the /SD_MODE of the MAX98357A and driving it high selects
-// left channel only. For stereo mixing there would have to be a "large" 
-// resistor as a pullup which isn't there on the TN20k
-
-assign pa_en = !cpu_reset;   // simply enable amplifier with left channel
+/* -------------------- HDMI video and audio -------------------- */
 
 // latch audio, so it's stable during 48khz transfer
-reg [14:0] scaled_audio_left;
-reg [14:0] scaled_audio_right;
+reg [15:0] audio_reg [2]; // 16 bit signed audio for HDMI
 
+// Sign-extend inputs to 16-bit BEFORE mixing – intermediate sum
+// cannot overflow, result always fits back in 15 bit.
+wire signed [15:0] audio_left_s  = {{1{audio_left[14]}},  audio_left};
+wire signed [15:0] audio_right_s = {{1{audio_right[14]}}, audio_right};
+
+reg signed [14:0] mixed_audio_left;
+reg signed [14:0] mixed_audio_right;
+reg signed [14:0] scaled_audio_left;
+reg signed [14:0] scaled_audio_right;
+
+// generate 48khz audio clock
 reg clk_audio;
-reg [7:0] aclk_cnt;
-always @(posedge clk_28m) begin
-    if(aclk_cnt < 28375160 / (24000*32) / 2 - 1)
-        aclk_cnt <= aclk_cnt + 8'd1;
-    else begin
-        aclk_cnt <= 8'd0;
-        clk_audio <= ~clk_audio;
+reg [8:0] aclk_cnt;
 
-	    // Scale values and Assign scaled values to the HDMI registers
+always @(posedge clk_pixel) begin
+    // divisor = pixel clock / 48000 / 2 - 1
+    if(aclk_cnt < `PIXEL_CLOCK / 48000 / 2 -1)
+      aclk_cnt <= aclk_cnt + 9'd1;
+    else begin
+       aclk_cnt <= 9'd0;
+       clk_audio <= ~clk_audio;
+
+        // --- Stereo Mix (75/25)-------------------------------------------
+        // 16-bit signed wires prevent any overflow; the result
+        // always fits in 15 bit and is truncated safely on assignment. 
+	    case (osd_stereo_mix)
+            1'b0: begin   // no mix
+                mixed_audio_left  <= audio_left;
+                mixed_audio_right <= audio_right;
+            end
+            default: begin  // 75 / 25 blend
+                mixed_audio_left  <= (audio_left_s  - (audio_left_s  >>> 2))
+                                   + (audio_right_s >>> 2);
+                mixed_audio_right <= (audio_right_s - (audio_right_s >>> 2))
+                                   + (audio_left_s  >>> 2);
+            end
+        endcase
+
+    // --- Volume scaling ----------------------------------------
+        // mixed_audio_* are reg signed [14:0], so >>> is always
+        // arithmetic – no $signed() wrapper required.
         case (osd_volume) 
             3'b100: begin // 100%
-                scaled_audio_left  <= audio_left;
-                scaled_audio_right <= audio_right;
+                scaled_audio_left  <= mixed_audio_left;
+                scaled_audio_right <= mixed_audio_right;
             end
             3'b011: begin // 75%
-                scaled_audio_left  <= ($signed(audio_left)  >>> 1) + ($signed(audio_left)  >>> 2);
-                scaled_audio_right <= ($signed(audio_right) >>> 1) + ($signed(audio_right) >>> 2);
+                scaled_audio_left  <= (mixed_audio_left  >>> 1) + (mixed_audio_left  >>> 2);
+                scaled_audio_right <= (mixed_audio_right >>> 1) + (mixed_audio_right >>> 2);
             end
             3'b010: begin // 50%
-                scaled_audio_left  <= $signed(audio_left)  >>> 1;
-                scaled_audio_right <= $signed(audio_right) >>> 1;
+                scaled_audio_left  <= mixed_audio_left  >>> 1;
+                scaled_audio_right <= mixed_audio_right >>> 1;
             end
             3'b001: begin // 25%
-                scaled_audio_left  <= $signed(audio_left)  >>> 2;
-                scaled_audio_right <= $signed(audio_right) >>> 2;
+                scaled_audio_left  <= mixed_audio_left  >>> 2;
+                scaled_audio_right <= mixed_audio_right >>> 2;
             end
             3'b000: begin // Mute
                 scaled_audio_left  <= 15'd0;
                 scaled_audio_right <= 15'd0;
             end
-            default: begin
-                scaled_audio_left  <= $signed(audio_left)  >>> 1;
-                scaled_audio_right <= $signed(audio_right) >>> 1;
+            default: begin // fallback 50 %
+                scaled_audio_left  <= mixed_audio_left  >>> 1;
+                scaled_audio_right <= mixed_audio_right >>> 1;
             end
         endcase
+
+        // --- HDMI audio register ----------------------------------
+        // Convert signed two's complement → offset binary:
+        // flip sign bit (bit 14).  Bit 15 = 0 (15-bit audio in 16-bit slot).
+        // Explicit per-element assignment avoids unpacked-array ambiguity.
+        audio_reg[0] <= {1'b0, ~scaled_audio_left[14],  scaled_audio_left[13:0]};
+        audio_reg[1] <= {1'b0, ~scaled_audio_right[14], scaled_audio_right[13:0]};	
+
     end
 end
+   
+wire vreset, vpal, interlace, short_frame;
+video_analyzer video_analyzer (
+    .clk         ( clk_28m   ),
+    .hs          ( hs_n      ),
+    .vs          ( vs_n      ),
+    .pal         ( vpal      ),
+    .short_frame ( short_frame ),
+    .screen      ( osd_video_screen ),
+    .interlace   ( interlace ),
+    .vreset      ( vreset    )
+);
 
-// sign expand and add both channels
-wire [15:0] audio_mix = { scaled_audio_left[14], scaled_audio_left} + { scaled_audio_right[14], scaled_audio_right };
+hdmi #(
+    .AUDIO_RATE(48000), .AUDIO_BIT_WIDTH(16),
+    .VENDOR_NAME( { "MiSTle", 16'd0} ),
+    .PRODUCT_DESCRIPTION( {"Nanomig", 72'd0} )
+) hdmi(
+  .clk_pixel_x5(clk_pixel_x5),
+  .clk_pixel(clk_pixel),
+  .clk_audio(clk_audio),
+  .audio_sample_word( audio_reg ),
+  .tmds_clock(tmds[1:0]),
+  .tmds(tmds[7:2]),
 
-// shift audio down to reduce amp output volume to a sane range
-localparam AUDIO_SHIFT = 3;   
-wire [15:0] audio_scaled = { { AUDIO_SHIFT+1{audio_mix[15]}}, audio_mix[14:AUDIO_SHIFT] };   
+  .pal_mode(vpal),
+  .short_frame ( short_frame ),
+  .screen ( osd_video_screen ),
+  .interlace(interlace),
+  .reset(vreset),    // signal to synchronize HDMI
 
-// count 32 bits, 16 left and 16 right channel. MAX samples
-// on rising edge
-reg [15:0] audio;
-reg [4:0] audio_bit_cnt;
-always @(posedge clk_audio) begin
-   if(cpu_reset) audio_bit_cnt <= 5'd0;
-   else          audio_bit_cnt <= audio_bit_cnt + 5'd1;
-
-   // latch data so it's stable during transmission
-   if(audio_bit_cnt == 5'd31)
-	 audio <= audio_scaled;
-end
-
-// generate i2s signals
-assign hp_bck = !clk_audio;
-assign hp_ws = cpu_reset?1'b0:audio_bit_cnt[4];
-assign hp_din = cpu_reset?1'b0:audio[15-audio_bit_cnt[3:0]];
-
+  .rgb( { video_red, 2'b00, video_green, 2'b00, video_blue, 2'b00 } )
+);
+   
 endmodule
-
-// To match emacs with gw_ide default
-// Local Variables:
-// tab-width: 4
-// End:
