@@ -579,7 +579,7 @@ wire [15:0] sdram_dout;
 assign ram_din = sdram_dout;
 
 // pack config values into minimig config
-wire [5:0] chipset_config = { 1'b0,osd_chipset,osd_video_mode,1'b0 };
+wire [5:0] chipset_config = { 1'b0,osd_chipset,osd_video_mode,1'b0 }; // ECS
 wire [7:0] memory_config = { 4'b0_000, osd_slowmem, osd_chipmem };   
 wire [2:0] fastram_config = { 1'b0, osd_fastmem };   
 wire [3:0] floppy_config = { osd_floppy_drives, osd_floppy_wrprot, osd_floppy_turbo };
