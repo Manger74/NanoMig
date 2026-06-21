@@ -1,20 +1,27 @@
 /*
-    top.sv - NanoMig on Lattice
+    top.sv - Minimig on tang nano 20k toplevel
 */ 
- 
-`define LATTICE
-`define TMDS_BY_LOGIC
-`define INFER_DPRAM
-// `define ENABLE_TG68K
-`define DISABLE_IDE       // the inferred ram exceeds the chip
- 
+
+/* we need two copies in case of 256k kickroms
+     openFPGALoader --external-flash -o 0x400000 kick13.rom
+     openFPGALoader --external-flash -o 0x440000 kick13.rom
+   or a single copy of e.g. a 512k diag rom
+     openFPGALoader --external-flash -o 0x400000 DiagROM
+*/
+
+// TG68K CPU is set by default 
+// CPU type can be selected in the menu (68000/68010/68020)
+
+`define ENABLE_TG68K
+
 module top(
   input			clk,
 
-  input			reset_n,
-  input			user_n,
+  input			reset, // button S2
+  input			user,  // button S1
 
-  output [4:0]	leds,
+  output [5:0]	leds_n,
+  output		ws2812,
 
   // spi flash interface
   output		mspi_cs,
@@ -31,72 +38,86 @@ module top(
   output		O_sdram_cas_n, // columns address select
   output		O_sdram_ras_n, // row address select
   output		O_sdram_wen_n, // write enable
-  inout [15:0]	IO_sdram_dq, // 16 bit bidirectional data bus
-  output [12:0]	O_sdram_addr, // 13 bit multiplexed address bus
+  inout [31:0]	IO_sdram_dq, // 32 bit bidirectional data bus
+  output [10:0]	O_sdram_addr, // 11 bit multiplexed address bus
   output [1:0]	O_sdram_ba, // two banks
-  output [1:0]	O_sdram_dqm, // 16/4
+  output [3:0]	O_sdram_dqm, // 32/4
 
-  // GPIO is used for joysticks and the companion
-  inout [27:0] gpio,
+  // generic IO, used for mouse & joystick
+  input [5:0]	js0,
+
+  // spare IO, used for 2nd joystick
+  input [5:0]   js1,
+
+  // interface to external BL616/M0S
+  inout [4:0]	m0s,
+
+  // MIDI/UART
+  input			midi_in,
+  output		midi_out,
+
+  // BUZZER
+  output		buzzer,
 
   // SD card slot
   output		sd_clk,
   inout			sd_cmd, // MOSI
   inout [3:0]	sd_dat, // 0: MISO
+	   
+  // SPI connection to ob-board BL616. By default an external
+  // connection is used with a M0S Dock
+  input			spi_sclk,
+  input			spi_csn,
+  output		spi_dir,
+  input			spi_dat,
+  output		spi_irqn,
 
   // hdmi/tdms
-  output [3:0] gpdi_dp    // negative seems to be mapped implicitely
+  output		tmds_clk_n,
+  output		tmds_clk_p,
+  output [2:0]	tmds_d_n,
+  output [2:0]	tmds_d_p
 );
-
-wire [7:0] tmds;
-assign gpdi_dp = { tmds[7], tmds[5], tmds[3], tmds[1] };
-
-// map joysticks onto GPIO 0 to 11
-assign gpio[5:0] = 6'hzz;
-wire [5:0] js0 = gpio[5:0];
-assign gpio[11:6] = 6'hzz;
-wire [5:0] js1 = gpio[11:6];
-
-// map companion onto GPIO 21 to 25
-wire spi_dir;
-wire spi_irqn;
-assign gpio[25:21] = { 3'bzzz, spi_irqn, spi_dir };
-wire spi_csn  = gpio[23];
-wire spi_sclk = gpio[24];
-wire spi_dat  = gpio[25];
-
+`default_nettype none
+  
 // physcial dsub9 joystick & mouse port 1 and 2
 wire [5:0] db9_joy0 = { !js0[5], !js0[0], !js0[2], !js0[1], !js0[4], !js0[3] };   
 wire [5:0] db9_joy1 = { !js1[5], !js1[0], !js1[2], !js1[1], !js1[4], !js1[3] }; 
    
-assign leds[4] = |{sd_wr,sd_rd};
+wire [5:0]	leds;
+assign leds[5] = |sd_wr;
+assign leds[4] = |sd_rd;
+assign leds_n = ~leds;  
 
 // ============================== clock generation ===========================
    
-// HDMI clock:  140 MHz
-// Pixel clock: 28 MHz (HDMI/5)
-// SDRAM and flash clock: 84 MHz
-// Amiga clock: 7.0 (Pixel/4)
+// HDMI clock:  141.8758 MHz
+// Pixel clock: 28.37516 MHz (HDMI/5)
+// SDRAM and flash clock: 85 MHz
+// Amiga clock: 7.09379 (Pixel/4)
    
 `define PIXEL_CLOCK 28375160
 
 wire clk_pixel_x5;   
 wire pll_lock;   
+wire clk_7;
 wire clk_28m;
 wire clk_85m;
 wire clk_85m_shifted;
 wire clk_pixel;
 
-pll_142m pll_142m (
-	.CLKI( clk ),               // 50Mhz in
-	.CLKOP( clk_pixel_x5),      // 140 Mhz
-	.CLKOS( clk_85m ),          // 84 Mhz
-	.CLKOS2( clk_85m_shifted ), // 84 Mhz shifted by 216° 
-	.CLKOS3( clk_pixel ),       // 28 Mhz
-    .LOCK( pll_lock )
+amigaclks amigaclks (
+	.clk_in(clk),
+	.clk_7m(clk_7), // Unused
+	.clk_28m(clk_28m),
+	.clk_85m(clk_85m),
+	.clk_sdram(clk_85m_shifted),
+	.locked(pll_lock),
+	.vidmode(1'b1),
+	.clk_tmds(clk_pixel_x5),
+	.clk_pixel(clk_pixel),
+	.video_locked()
 );
-
-assign clk_28m = clk_pixel;
 
 wire	clk7_en;   
 wire	clk7n_en;   
@@ -109,9 +130,8 @@ wire [1:0] osd_fastmem;         // 0=None, 1=2M, 2=4M
 wire [1:0] osd_floppy_drives;
 wire       osd_floppy_turbo;
 wire       osd_floppy_wrprot;
-`ifndef DISABLE_IDE
 wire       osd_ide_enable;
-`endif
+wire [1:0] osd_cpu;             // 0=68000, 1=68010, 2=68020
 wire [1:0] osd_chipset;         // 0=OCS-A500, 1=OCS-A1000, 2=ECS
 wire       osd_video_mode;      // PAL (0=PAL, 1=NTSC)
 wire [1:0] osd_video_screen;    // 0=standard, 1=overscan, 2=wide screen (jailbars)
@@ -120,16 +140,15 @@ wire [1:0] osd_video_scanlines;
 wire       osd_joy_swap;        // 0=off, 1=on
 wire [2:0] osd_volume;          // Mute=0, 1=25%, 2=50%, 3=75%, 4=100%
 wire       osd_stereo_mix;      // 0=off, 1=on
-
 wire	   rom_download_in_progress;
 
 // generate a reset for some time after rom has been initialized
 reg [15:0] reset_cnt;
 always @(negedge clk_28m) begin
-    if(!pll_lock || !rom_done || reset_n || osd_reset || kbd_reset || rom_download_in_progress )
+    if(!pll_lock || !rom_done || reset || osd_reset || kbd_reset || rom_download_in_progress)
         reset_cnt <= 16'hffff;
     else if(reset_cnt != 0)
-        reset_cnt <= reset_cnt - 16'd1;
+        reset_cnt = reset_cnt - 16'd1;
 end
 
 // this is the reset that goes into the nanomig itself
@@ -145,13 +164,41 @@ wire spi_io_dout;
 wire spi_intn;   
    
 assign spi_dir = spi_io_dout;
+assign m0s[4:0] = { spi_intn, 3'bzzz, spi_io_dout };
 assign spi_irqn = spi_intn;
+
+// by default the internal SPI is being used. Once there is
+// a select from the external spi, then the connection is
+// being switched
+reg spi_ext;
+always @(posedge clk_28m) begin
+    if(!pll_lock)
+        spi_ext = 1'b0;
+    else begin
+        // spi_ext is activated once the m0s pins 2 (ss or csn) is
+        // driven low by the m0s dock. This means that a m0s dock
+        // is connected and the FPGA switches its inputs to the
+        // m0s. Until then the inputs of the internal BL616 are
+        // being used.
+        if(m0s[2] == 1'b0)
+            spi_ext = 1'b1;
+    end
+end
 
 // switch between internal SPI connected to the on-board bl616
 // or to the external one possibly connected to a M0S Dock
-wire spi_io_din = spi_dat;
-wire spi_io_ss = spi_csn;
-wire spi_io_clk = spi_sclk;
+wire spi_io_din = spi_ext?m0s[1]:spi_dat;
+wire spi_io_ss = spi_ext?m0s[2]:spi_csn;
+wire spi_io_clk = spi_ext?m0s[3]:spi_sclk;
+
+// connect to ws2812 led
+wire [23:0] ws2812_color;
+ws2812 ws2812_inst (
+    .clk(clk_28m),
+	.reset(!pll_lock),
+    .color(ws2812_color),
+    .data(ws2812)
+);
 
 // interface to M0S MCU
 wire       mcu_sys_strobe;        // mcu message byte valid for sysctrl
@@ -409,9 +456,8 @@ sysctrl sysctrl (
 		.system_floppy_drives(osd_floppy_drives),
 		.system_floppy_turbo(osd_floppy_turbo),
 		.system_floppy_wrprot(osd_floppy_wrprot),
-`ifndef DISABLE_IDE
 		.system_ide_enable(osd_ide_enable),
-`endif
+        .system_cpu(osd_cpu),
 	    .system_chipset(osd_chipset),
 		.system_video_mode(osd_video_mode),
 		.system_video_screen(osd_video_screen),
@@ -428,7 +474,7 @@ sysctrl sysctrl (
         .int_in( { 4'b0000, sdc_int, 1'b0, hid_int, 1'b0 }),
         .int_ack( int_ack ),
 
-        .buttons( {!user_n, !reset_n} ),
+        .buttons( {user, reset} ),
         .leds(),
         .color(ws2812_color)
 );
@@ -538,10 +584,8 @@ wire [7:0] memory_config = { 4'b0_000, osd_slowmem, osd_chipmem };
 wire [2:0] fastram_config = { 1'b0, osd_fastmem };   
 wire [3:0] floppy_config = { osd_floppy_drives, osd_floppy_wrprot, osd_floppy_turbo };
 wire [3:0] video_config = { osd_video_filter, osd_video_scanlines };   
-`ifndef DISABLE_IDE
-wire [5:0] ide_config = { 5'b00000, osd_ide_enable };   
-`endif
-
+wire [5:0] ide_config = { 5'b10000, osd_ide_enable };   
+   
 nanomig nanomig
 (
  .clk_sys(clk_28m),
@@ -553,18 +597,15 @@ nanomig nanomig
 
  .pwr_led(leds[0]),
  .fdd_led(leds[1]),
-`ifndef DISABLE_IDE
  .hdd_led(leds[2]),
-`endif
  
  .memory_config(memory_config),
  .fastram_config(fastram_config),
+ .cpu_config(osd_cpu),
  .chipset_config(chipset_config),
  .floppy_config(floppy_config),
  .video_config(video_config),
-`ifndef DISABLE_IDE
  .ide_config(ide_config),
-`endif
 
  // video
  .hs(hs_n), // horizontal sync
@@ -577,8 +618,8 @@ nanomig nanomig
  .audio_right(audio_right),
 
  // uart interface 
- .uart_rx(),
- .uart_tx(),
+ .uart_rx(midi_in),
+ .uart_tx(midi_out),
  
  // keyboard & mouse				 
  .mouse_buttons(mouse_buttons), // mouse buttons
@@ -771,7 +812,7 @@ wire [21:0] sdram_addr    =
 assign O_sdram_clk = clk_85m_shifted;   
 assign O_sdram_cke = 1'b1;  // clock enable
    
-sdram sdram (
+sdram #(.DATA_WIDTH(32), .RASCAS_DELAY(2), .RAS_WIDTH(11), .CAS_WIDTH(8) ) sdram (
 	.sd_data    ( IO_sdram_dq   ), // 32 bit bidirectional data bus
 	.sd_addr    ( O_sdram_addr  ), // 11 bit multiplexed address bus
 	.sd_dqm     ( O_sdram_dqm   ), // two byte masks
@@ -908,6 +949,9 @@ always @(posedge clk_pixel) begin
     end
 end
    
+wire [2:0] tmds;
+wire tmds_clock;
+
 wire vreset, vpal, interlace, short_frame;
 video_analyzer video_analyzer (
     .clk         ( clk_28m   ),
@@ -929,8 +973,8 @@ hdmi #(
   .clk_pixel(clk_pixel),
   .clk_audio(clk_audio),
   .audio_sample_word( audio_reg ),
-  .tmds_clock(tmds[1:0]),
-  .tmds(tmds[7:2]),
+  .tmds(tmds),
+  .tmds_clock(tmds_clock),
 
   .pal_mode(vpal),
   .short_frame ( short_frame ),
@@ -940,5 +984,18 @@ hdmi #(
 
   .rgb( { video_red, 2'b00, video_green, 2'b00, video_blue, 2'b00 } )
 );
+
+// differential output
+ELVDS_OBUF tmds_bufds [3:0] (
+        .I({tmds_clock, tmds}),
+        .O({tmds_clk_p, tmds_d_p}),
+        .OB({tmds_clk_n, tmds_d_n})
+);
    
 endmodule
+
+// To match emacs with gw_ide default
+// Local Variables:
+// tab-width: 4
+// End:
+`default_nettype wire
