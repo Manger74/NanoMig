@@ -1,5 +1,13 @@
 /*
-    top.sv - NanoMig on Lattice
+    top.sv - NanoMig on Lattice/IcePi-Zero
+
+	Warning: This will currently not rebuild the config xml but instead just
+	use whtever is present from previous (gowin) builds. This needs to be fixed!
+	
+	openFPGALoader -cft231X --pins=7:3:5:6 lattice/icepi-zero/impl/nanomig_impl.bit 
+
+	openFPGALoader -cft231X --pins=7:3:5:6 --external-flash -o 0x400000 kick13.rom
+	openFPGALoader -cft231X --pins=7:3:5:6 --external-flash -o 0x440000 kick13.rom	
 */ 
  
 `define LATTICE
@@ -7,49 +15,53 @@
 `define INFER_DPRAM
 // `define ENABLE_TG68K
 `define DISABLE_IDE       // the inferred ram exceeds the chip
- 
-module top(
-  input			clk,
+// `define HDMI_TEST_PATTERN  // display static test pattern on HDMI instead of amiga video
+`define ENABLE_INT_ROM     // enable 2k internal test rom in nanomig.v
+`define ENABLE_INT_RAM     // if internal rom is enabled, then this also enables 2k internal test ram in nanomig.v
 
-  input			reset_n,
-  input			user_n,
+module top(
+  input		clk,
+
+  input		reset_n,
+  input		user_n,
 
   output [4:0]	leds,
 
   // spi flash interface
-  output		mspi_cs,
-  output		mspi_clk,
-  inout			mspi_di,
-  inout			mspi_hold,
-  inout			mspi_wp,
-  inout			mspi_do,
+  output	mspi_cs,
+  output	mspi_clk,
+  inout		mspi_di,
+  inout		mspi_hold,
+  inout		mspi_wp,
+  inout		mspi_do,
 
-  // "Magic" port names that the gowin compiler connects to the on-chip SDRAM
-  output		O_sdram_clk,
-  output		O_sdram_cke,
-  output		O_sdram_cs_n,  // chip select
-  output		O_sdram_cas_n, // columns address select
-  output		O_sdram_ras_n, // row address select
-  output		O_sdram_wen_n, // write enable
+  // SDRAM
+  output	O_sdram_clk,
+  output	O_sdram_cke,
+  output	O_sdram_cs_n, // chip select
+  output	O_sdram_cas_n, // columns address select
+  output	O_sdram_ras_n, // row address select
+  output	O_sdram_wen_n, // write enable
   inout [15:0]	IO_sdram_dq, // 16 bit bidirectional data bus
   output [12:0]	O_sdram_addr, // 13 bit multiplexed address bus
-  output [1:0]	O_sdram_ba, // two banks
-  output [1:0]	O_sdram_dqm, // 16/4
+  output [1:0]	O_sdram_ba, // four banks
+  output [1:0]	O_sdram_dqm, // 2*8bit
 
   // GPIO is used for joysticks and the companion
-  inout [27:0] gpio,
+  inout [27:0]	gpio,
 
   // SD card slot
-  output		sd_clk,
-  inout			sd_cmd, // MOSI
+  output	sd_clk,
+  inout		sd_cmd, // MOSI
   inout [3:0]	sd_dat, // 0: MISO
 
   // hdmi/tdms
-  output [3:0] gpdi_dp    // negative seems to be mapped implicitely
+  output [3:0]	gpdi_dp    // negative seems to be mapped implicitely
 );
 
+// map TMDS signals onto positive gpdi pins
 wire [7:0] tmds;
-assign gpdi_dp = { tmds[7], tmds[5], tmds[3], tmds[1] };
+assign gpdi_dp = { tmds[0], tmds[6], tmds[4], tmds[2] };
 
 // map joysticks onto GPIO 0 to 11
 assign gpio[5:0] = 6'hzz;
@@ -770,12 +782,12 @@ wire [21:0] sdram_addr    =
 
 assign O_sdram_clk = clk_85m_shifted;   
 assign O_sdram_cke = 1'b1;  // clock enable
-   
+
 sdram sdram (
-	.sd_data    ( IO_sdram_dq   ), // 32 bit bidirectional data bus
-	.sd_addr    ( O_sdram_addr  ), // 11 bit multiplexed address bus
+	.sd_data    ( IO_sdram_dq   ), // 14 bit bidirectional data bus
+	.sd_addr    ( O_sdram_addr  ), // 13 bit multiplexed address bus
 	.sd_dqm     ( O_sdram_dqm   ), // two byte masks
-	.sd_ba      ( O_sdram_ba    ), // two banks
+	.sd_ba      ( O_sdram_ba    ), // four banks
 	.sd_cs      ( O_sdram_cs_n  ), // a single chip select
 	.sd_we      ( O_sdram_wen_n ), // write enable
 	.sd_ras     ( O_sdram_ras_n ), // row address select
