@@ -1,0 +1,5 @@
+/* defines_020.vh */
+
+`define ENABLE_DRIVE_SOUNDS
+`define ENABLE_KICK_SWITCH_LITE
+`define ENABLE_CONFIG_LOADER
