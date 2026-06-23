@@ -5,7 +5,7 @@
 #
 
 package require zlib
-puts "MiSTle XML Tool, board = $board, config = $config"
+puts "MiSTle XML Tool, board = $board, config = $config, defines = $defines"
 
 # it would be nice if we could access the project options from
 # here as e.g. OUTPUT_BASE_NAME would nice to distinguish which
