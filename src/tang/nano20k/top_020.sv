@@ -13,6 +13,7 @@
 // CPU type can be selected in the menu (68000/68010/68020)
 
 `define ENABLE_TG68K
+`include "defines_020.vh"
 
 module top(
   input			clk,
