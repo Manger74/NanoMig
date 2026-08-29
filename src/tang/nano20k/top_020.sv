@@ -294,6 +294,7 @@ wire [63:0] sd_img_size;
 wire [7:0]  sd_img_mounted;
 reg         sd_ready;
 
+/*	
 // state machine handling kickstart upload from Companion
 reg [2:0]	 kick_upload_state = 3'd0;
 reg		     kick_is_256k; 
@@ -318,7 +319,7 @@ wire [18:1]	 rom_data_addr_max = ((kick_is_256k?'d262144:'d524288)/2)-1;
 
 // The ROM uploader receives ROM data from the Companion and writes it into
 // the area of sdram that is reserved for kickstart rom  
-/*	
+
 always @(posedge clk_28m, posedge rst_28m) begin
    if(rst_28m) begin
       kick_upload_state <= 3'd0;
