@@ -716,6 +716,27 @@ nanomig nanomig
  .fastram_ready(fastram_ready)
 );
 
+wire	flash_ready;  
+wire	mem_ready = sdram_ready && flash_ready && pll_lock;     
+reg		start_rom_copy;
+reg		mem_ready_D;
+
+// generate a start_rom_copy signal once flash and SDRAM are initialized
+always @(posedge clk_85m or negedge pll_lock) begin
+   if(!pll_lock) begin
+      start_rom_copy <= 1'b0;
+      mem_ready_D <= 1'b0;
+         
+   end else begin
+      mem_ready_D <= mem_ready;  
+      start_rom_copy <= 1'b0;         
+
+      if(mem_ready && !mem_ready_D)
+          start_rom_copy <= 1'b1;     
+   end
+end
+	
+/*
 wire flash_ready;
 
 reg flash_ready_d1;
@@ -731,8 +752,7 @@ always @(posedge clk_28m, posedge rst_28m) begin
       flash_ready_d2 <= flash_ready_d1;
    end
 end
-
-/* -------------- state machine copying data from flash to sdram ---------------- 
+-------------- state machine copying data from flash to sdram ---------------- 
 reg  [21:0] flash_addr = 22'h200000;
 reg  [17:0] flash_ram_addr = 18'h0;
 reg  [31:0] word_count = 32'h40000;
