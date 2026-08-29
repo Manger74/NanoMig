@@ -52,7 +52,8 @@ module sysctrl #(
   output reg	    system_joy_swap,
   output reg [2:0]  system_volume,
   output reg	    system_stereo_mix,
-  output reg [7:0]  system_lcd_v_pos
+  output reg [7:0]  system_lcd_v_pos,
+  output reg [1:0]  system_kickstart
 );
 
 reg [3:0] state;
@@ -132,6 +133,7 @@ always @(posedge clk) begin
       system_joy_swap <= 1'b1;
       system_volume <= 3'b010;
 	  system_stereo_mix <= 1'b1;
+	  system_kickstart <= 2'b01;
    end
    else
    begin // if (reset)
@@ -251,6 +253,8 @@ always @(posedge clk) begin
 		   if(id == "M") system_stereo_mix <= data_in[0];
 		   // value "B": lcd vertical position (used in lcd variant, only)
 		   if(id == "B") system_lcd_v_pos <= data_in;
+		   // Value "K": Kickstart 1.3(0), 3.1(1), 3.2(2)
+		   if(id == "K") system_kickstart <= data_in[1:0];
                 end
             end
 
