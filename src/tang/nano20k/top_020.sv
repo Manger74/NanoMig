@@ -976,8 +976,8 @@ wire [1:0]  sdram_be      =
 
 // check if the sdram access goes into the ram segments used to store kickrom and if
 // a 256k kick has been downloaded
-wire		 minimig_is_accessing_rom = ram_a[22:19] == 4'b1111;
-wire		 minimig_is_accessing_256k_rom = kick_is_256k && minimig_is_accessing_rom;   
+//wire		 minimig_is_accessing_rom = ram_a[22:19] == 4'b1111;
+//wire		 minimig_is_accessing_256k_rom = kick_is_256k && minimig_is_accessing_rom;   
 
 wire		sdram_we      = 
 			//!rom_done?flash_ram_write:               // flash download write enable			
