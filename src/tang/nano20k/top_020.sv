@@ -984,7 +984,7 @@ wire		sdram_we      =
 			//rom_download_in_progress?rom_data_word_we:
 			// the following test is needed as the rom kick area is also accessible to the
 			// minimig through the fastram area at $780000
-			(sdram_rw && !minimig_is_accessing_rom); // regular ram write as requested by the cpu or chipset
+			(sdram_rw ); // regular ram write as requested by the cpu or chipset
 
 wire [21:0] sdram_addr    = 
 			//!rom_done?{4'b1111, flash_ram_addr}:                // initial rom download from flash
