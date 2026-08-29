@@ -989,7 +989,7 @@ wire		sdram_we      =
 wire [21:0] sdram_addr    = 
 			//!rom_done?{4'b1111, flash_ram_addr}:                // initial rom download from flash
 			//rom_download_in_progress?{4'b1111, rom_data_addr}:  // rom download from sd card
-			minimig_is_accessing_256k_rom?{ram_a[22:19],1'b0,ram_a[17:1]}:  // regular rom access into 256k kickstart
+			//minimig_is_accessing_256k_rom?{ram_a[22:19],1'b0,ram_a[17:1]}:  // regular rom access into 256k kickstart
 			ram_a[22:1];                                        // regular operation
 
 assign O_sdram_clk = clk_85m_shifted;
