@@ -418,13 +418,14 @@ sd_card #(
     .image_mounted(sd_img_mounted),
     .image_size(sd_img_size),           // length of image file
 
-    // rom download interface
+    /* rom download interface
     .rom_image_selected(rom_selected),  // image_size is valid for this
     .rom_image_selection_strobe(rom_selection_strobe),
     .rom_image_accepted(rom_accepted),
     .rom_image_data_available(rom_data_available),
     .rom_image_data(rom_data),
     .rom_image_data_strobe(rom_data_strobe),
+	*/
 		   
     // interrupt to signal communication request
     .irq(sdc_int),
@@ -952,9 +953,9 @@ wire	    sdram_rw      = !ram_we_n;
 //  3. flash rom download to ram initiated by the companion
 
 wire		sdram_cs      =
-			!rom_done?flash_ram_write:
-			rom_download_in_progress?rom_data_word_we:
-			sdram_access;
+			//!rom_done?flash_ram_write:
+			//rom_download_in_progress?rom_data_word_we:
+			sdram_access; 
 
 wire        sdram_sync    = clk7_en;
    
@@ -964,8 +965,8 @@ wire		sdram_refresh =
 			ram_refresh;
 
 wire [15:0] sdram_din     =
-			!rom_done?flash_dout:                    // initial rom download from flash
-			rom_download_in_progress?rom_data_word:  // rom download from sd card
+			//!rom_done?flash_dout:                    // initial rom download from flash
+			//rom_download_in_progress?rom_data_word:  // rom download from sd card
 			ram_dout;                                // regular operation
    
 wire [1:0]  sdram_be      =
@@ -979,15 +980,15 @@ wire		 minimig_is_accessing_rom = ram_a[22:19] == 4'b1111;
 wire		 minimig_is_accessing_256k_rom = kick_is_256k && minimig_is_accessing_rom;   
 
 wire		sdram_we      = 
-			!rom_done?flash_ram_write:               // flash download write enable			
-			rom_download_in_progress?rom_data_word_we:
+			//!rom_done?flash_ram_write:               // flash download write enable			
+			//rom_download_in_progress?rom_data_word_we:
 			// the following test is needed as the rom kick area is also accessible to the
 			// minimig through the fastram area at $780000
 			(sdram_rw && !minimig_is_accessing_rom); // regular ram write as requested by the cpu or chipset
 
 wire [21:0] sdram_addr    = 
-			!rom_done?{4'b1111, flash_ram_addr}:                // initial rom download from flash
-			rom_download_in_progress?{4'b1111, rom_data_addr}:  // rom download from sd card
+			//!rom_done?{4'b1111, flash_ram_addr}:                // initial rom download from flash
+			//rom_download_in_progress?{4'b1111, rom_data_addr}:  // rom download from sd card
 			minimig_is_accessing_256k_rom?{ram_a[22:19],1'b0,ram_a[17:1]}:  // regular rom access into 256k kickstart
 			ram_a[22:1];                                        // regular operation
 
