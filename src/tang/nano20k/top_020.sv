@@ -1,12 +1,11 @@
 /*
     top.sv - Minimig on tang nano 20k toplevel
-*/ 
 
-/* we need two copies in case of 256k kickroms
-     openFPGALoader --external-flash -o 0x400000 kick13.rom
-     openFPGALoader --external-flash -o 0x440000 kick13.rom
-   or a single copy of e.g. a 512k diag rom
-     openFPGALoader --external-flash -o 0x400000 DiagROM
+For use of the KICK SWITCH LITE following ROM flashes are required
+0x400000 Kickstart 3.1 / 512k (default)
+0x700000 Kickstart 1.3 / 256k (optional)
+0x740000 Kickstart 1.3 / 256k (optional)
+0x780000 Kickstart 3.2 / 512k (optional)
 */
 
 `define ENABLE_TG68K
@@ -731,7 +730,7 @@ always @(posedge clk_28m, posedge rst_28m) begin
    end
 end
 
-/* -------------- state machine copying data from flash to sdram ---------------- */
+/* -------------- state machine copying data from flash to sdram ---------------- 
 reg  [21:0] flash_addr = 22'h200000;
 reg  [17:0] flash_ram_addr = 18'h0;
 reg  [31:0] word_count = 32'h40000;
@@ -804,6 +803,113 @@ always @(posedge clk_28m, posedge rst_28m, posedge reset) begin
       end
     endcase
   end
+end
+*/
+
+/* -------------- state machine copying data from flash to sdram ---------------- */
+reg [21:0]  flash_addr;  
+wire [15:0] flash_dout;
+reg [15:0]  flash_doutD;
+reg		    flash_cs;  
+reg [31:0]  word_count;
+reg [4:0]   state;
+wire        flash_data_strobe;
+wire        flash_busy;   
+
+// once the copy counter has run to zero, all rom has been copied
+wire		rom_done = (word_count == 0);
+
+assign leds[3] = !rom_done;  
+   
+reg [21:0]  flash_ram_addr;   
+reg         flash_ram_write;
+reg [5:0]   flash_cnt;  
+reg [2:0]   osd_kickstartD;
+reg         restart_rom_copy;
+
+// always @(posedge clk_85m or negedge mem_ready) begin
+always @(posedge clk_85m) begin
+    if(!mem_ready) begin
+
+        osd_kickstartD <= osd_kickstart;
+
+        case(osd_kickstart)
+            2'b00: flash_addr <= 22'h380000; // Kickstart 1.3 (at 7,0 MB)
+			2'b01: flash_addr <= 22'h200000; // Kickstart 3.1 (at 4,0 MB)
+            2'b10: flash_addr <= 22'h3C0000; // Kickstart 3.2 (at 7,5 MB)
+            default: flash_addr <= 22'h200000;
+        endcase
+
+        flash_ram_addr  <= {4'hf,18'h0};
+        word_count      <= 22'h40001;
+        state           <= 5'd0;
+        flash_ram_write <= 1'b0;
+        flash_cs        <= 1'b0;
+        flash_cnt       <= 6'd0;
+
+    end else begin
+
+        // detect change of kickstart from OSD
+       restart_rom_copy <= 1'b0;
+
+        if(osd_kickstart != osd_kickstartD) begin
+
+            osd_kickstartD <= osd_kickstart;
+
+            case(osd_kickstart)
+	            2'b00: flash_addr <= 22'h380000; // Kickstart 1.3 (at 7,0 MB)
+				2'b01: flash_addr <= 22'h200000; // Kickstart 3.1 (at 4,0 MB)
+	            2'b10: flash_addr <= 22'h3C0000; // Kickstart 3.2 (at 7,5 MB)
+	            default: flash_addr <= 22'h200000;
+            endcase
+
+            // reset State-Machine
+            flash_ram_addr  <= {4'hf,18'h0};
+            word_count      <= 22'h40001;
+            state           <= 5'd0;
+            flash_ram_write <= 1'b0;
+            flash_cs        <= 1'b0;
+            flash_cnt       <= 6'd0;
+            restart_rom_copy <= 1'b1;
+        end
+
+        // copy ROM from flash to memory
+        if((start_rom_copy || restart_rom_copy || state == 23) && (word_count != 0)) begin
+            flash_cs <= 1'b1;
+            flash_cnt <= 6'd45; // >= 30 @ 32MHz -- AMR, increase to 45 @ 85.5MHz
+        end else begin
+            if(flash_cnt != 0) flash_cnt <= flash_cnt - 6'd1;
+            if(flash_busy)     flash_cs <= 1'b0;
+
+            // ... static timing with fixed counter
+            if(flash_cnt == 6'd1) begin
+               state <= 1;
+               flash_addr <= flash_addr + 22'd1;
+               word_count <= word_count - 22'd1;
+			   
+               /* patch Kickstart 1.3 to force memory detection on every reset. 
+               This is needed for some flash chips that have a long access time and would otherwise 
+               cause a timeout during memory detection. The patch transforms a bne.b to a bra.b in the 
+               Kickstart ROM, so the memory detection loop is executed on every reset. The patch is 
+               applied to both the original and the mirror location of the code in the Kickstart ROM. */
+               if ((flash_addr == 22'h3800aa || flash_addr == 22'h3a00aa) && flash_dout == 16'h6678)
+				 // transform bne.b to bra.b in Kickstart ROM 1.2/1.3 @ $f80154 (mirror) and $fc0154
+				 // this forces memory detection on every reset
+				 flash_doutD <= flash_dout & 16'hf0ff;
+               else
+                 // we don't necessarily need to latch the data. But latching it here
+                 // allows to exactly determine the real access time by adjusting flash_cnt
+                 // to the lowest value that gives a stable image
+                 flash_doutD <= flash_dout;
+            end
+        end
+
+        // advance ram write state
+        if(state != 0)  state <= state + 3'd1;
+        if(state == 3)  flash_ram_write <= 1'b1;
+        if(state == 18)  flash_ram_write <= 1'b0;
+        if(state == 21)  flash_ram_addr <= flash_ram_addr + 22'd1;
+    end
 end
 
 // ----------------------------- SDRAM ---------------------------------
