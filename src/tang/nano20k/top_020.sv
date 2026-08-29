@@ -318,6 +318,7 @@ wire [18:1]	 rom_data_addr_max = ((kick_is_256k?'d262144:'d524288)/2)-1;
 
 // The ROM uploader receives ROM data from the Companion and writes it into
 // the area of sdram that is reserved for kickstart rom  
+/*	
 always @(posedge clk_28m, posedge rst_28m) begin
    if(rst_28m) begin
       kick_upload_state <= 3'd0;
@@ -391,6 +392,7 @@ always @(posedge clk_28m, posedge rst_28m) begin
       endcase	 
    end   
 end   
+*/
 
 sd_card #(
     .CLK_DIV(3'd0),                  // for 28 Mhz clock
