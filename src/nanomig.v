@@ -147,8 +147,8 @@ reg cpu_ph1, cpu_ph2, cpu_sync;
 //
 // signal   | cycle
 // -------------------
-// c1       | 1 1 0 0
-// c3       | 0 1 1 0
+// c1       | 0 1 1 0
+// c3       | 0 0 1 1
 // -------------------
 // clk7_en  | 1 0 0 0
 // clk7n_en | 0 0 1 0
@@ -173,8 +173,8 @@ always @(*) begin
       cpu_ph1 = 1'b0;
       cpu_ph2 = 1'b0;
    end else begin
-      cpu_ph1 = !c1 && !c3 && cpu_sync;
-      cpu_ph2 =  c1 &&  c3 && cpu_sync;
+      cpu_ph1 = !c1 &&  c3 && cpu_sync;
+      cpu_ph2 =  c1 && !c3 && cpu_sync;
    end
 end
 
@@ -215,7 +215,7 @@ always @(negedge clk_sys)
 `else
 assign pwr_led = pwr_led_bright;
 `endif
-   
+
 // -------------- fast(er) ram interface used in turbo mode --------------
 
 // This implements a direct path for the CPU to access ram. This can be used
@@ -223,34 +223,31 @@ assign pwr_led = pwr_led_bright;
 // faster access than usual. With the tg68k this can be used to speed up
 // the system significantly. Since Kickstart is also stored in ram, this also
 // speeds up kickstart rom access.
-   
+
 wire [15:0] ram_dout;
-wire [28:1] ram_addr;   
-wire	    ram_sel;
-wire	    ram_lds;
-wire	    ram_uds;
-   
+wire [28:1] ram_addr;
+wire        ram_sel;
+wire        ram_lds;
+wire        ram_uds;
+
 // ram_ready finally is the clkena for the tg68k
 `ifdef ENABLE_CACHE
 // ram_ready follows the cache acknowledge level directly instead of being
 // re-registered: cache_cs drops in the same cycle (see cache_cs below), which
 // makes the cache clear its ack, so this stays a single cycle pulse but
 // arrives one clock earlier - on every single cpu memory access.
-reg         ram_write_ready;   // write accepted into the write buffer
-wire        ram_ready = cache_ack | ram_write_ready;
+reg  ram_write_ready;   // write accepted into the write buffer
+wire ram_ready = cache_ack | ram_write_ready;
 `else
-reg	    ram_ready;
-`endif
-
-`ifndef ENABLE_CACHE
-reg fastram_ready_d;
-
 // cpu_ph1 is just before clk7_en, so this is
 // the very last moment we can receive ACK from SDRAM;
 // if it didn't happen then it means our request
 // didn't go through and we need to retry in the next cycle
-assign ram_ready = cpu_ph1 && (fastram_ready != fastram_ready_d);
+reg fastram_ready_d;
+wire ram_ready = cpu_ph1 && (fastram_ready != fastram_ready_d);
+`endif
 
+`ifndef ENABLE_CACHE
 // avoid selecting fastram when we didn't handle
 // ready signal yet (shouldn't happen but just
 // in case, it's better to keep it)
@@ -281,7 +278,7 @@ cpu_wrapper cpu_wrapper
 	.chip_dtack   (chip_dtack      ),
 	.chip_ipl     (chip_ipl        ),
 
- `ifdef FASTCHIP_DEPRECATED
+`ifdef FASTCHIP_DEPRECATED
 	.fastchip_dout   (  ),
 	.fastchip_sel    (  ),
 	.fastchip_lds    (  ),
@@ -291,7 +288,7 @@ cpu_wrapper cpu_wrapper
 	.fastchip_ready  ( 1'b0 ),
 	.fastchip_lw     (  ),
 `endif
- 
+
 	.cpucfg       (cpucfg          ),
 	.turbocfg     (turbocfg        ),
 	.fastramcfg   (fastram_config  ),
@@ -314,7 +311,7 @@ cpu_wrapper cpu_wrapper
 	.cacr         (cpu_cacr        ),
 	.nmi_addr     (cpu_nmi_addr    )
 );
-   
+
 `ifdef ENABLE_CACHE
 // ----------------------- cpu cache (MiSTer cpu_cache_new) -----------------------
 // The cache sits between the cpu's direct ram path and the sdram. Reads are
@@ -410,7 +407,7 @@ reg  [15:0] cache_fill_dat;
 
 `ifdef ENABLE_RAM32
 // We need to extend address width for devices with more than
-// 8MiB SDRAM to make 8MiB FastRAM work properly
+// 8MiB SDRAM to make 8MiB FastRAM work properly.
 localparam CACHE_ADDR_WIDTH = 24;
 `else
 localparam CACHE_ADDR_WIDTH = 23;
@@ -453,7 +450,6 @@ reg         wb_req;         // latched pending cache write
 reg         wb_en_d;        // wb_en edge detect
 reg         wr_lock;        // ack delivered, waiting for the cpu to consume it    // current cpu write has been acknowledged
 reg         cache_ack_d;
-reg         fastram_done_d;
 reg         fastram_sel_r;
 reg         fastram_wr_r;
 reg  [CACHE_ADDR_WIDTH-1:1] fastram_addr_r;
@@ -466,9 +462,10 @@ wire [1:0]  fill_word = fill_idx + fill_cnt;
 
 always @(posedge clk_sys) begin
   fastram_ready_d <= fastram_ready;
+  cache_ack_d     <= cache_ack;
+
   cache_fill_ack  <= 1'b0;
   ram_write_ready <= 1'b0;
-  cache_ack_d     <= cache_ack;
 
   if(!cpu_rst) begin
     fill_state    <= 2'd0;
@@ -480,15 +477,12 @@ always @(posedge clk_sys) begin
     fastram_sel_r <= 1'b0;
     fastram_wr_r  <= 1'b0;
   end else begin
-    // sdram port transaction finished. The read data is sampled one cycle
-    // after the ack has been seen to give the clock domain crossing from
-    // the 85MHz sdram controller a full cycle of settling time.
-    fastram_done_d <= fastram_done;
+    // sdram port transaction finished.
     if(fastram_done) begin
       fastram_sel_r <= 1'b0;
       wbuf_pending  <= 1'b0;
     end
-    if(fastram_done_d && (fill_state == 2'd1)) begin
+    if(fastram_done && (fill_state == 2'd1)) begin
       fill_line  <= { fastram_dout, fastram_dout48 };
       fill_cnt   <= 2'd0;
       fill_state <= 2'd2;
@@ -563,9 +557,9 @@ assign ram_dout     = cache_dat_r;
 assign fastram_addr = ram_addr[23:1];
 assign fastram_lds  = ram_lds;
 assign fastram_uds  = ram_uds;
-assign ram_dout     = fastram_dout;
 assign fastram_din  = ram_din;
 assign fastram_wr   = (cpu_state[1:0]==2'b11) ? 1'b1 : 1'b0;
+assign ram_dout     = fastram_dout;
 `endif
 
 wire [7:0] sdc_byte_out_data_fdc;   

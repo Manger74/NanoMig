@@ -14,8 +14,8 @@ create_clock -name clk_audio -period 20833 -waveform {0 10416} [get_nets {clk_au
 // every multi cycle setup exception needs its hold counterpart, otherwise the
 // hold analysis still assumes a single cycle relationship between the two
 // domains and reports thousands of meaningless violations
-set_multicycle_path -from [get_clocks {clk28}] -to [get_clocks {clk85}] 4
-set_multicycle_path -from [get_clocks {clk28}] -to [get_clocks {clk85}] -hold 3
+set_multicycle_path -from [get_clocks {clk28}] -to [get_clocks {clk85}] 2
+set_multicycle_path -from [get_clocks {clk28}] -to [get_clocks {clk85}] -hold 1
 set_multicycle_path -from [get_clocks {clk85}] -to [get_clocks {clk28}] -start 2
 set_multicycle_path -from [get_clocks {clk85}] -to [get_clocks {clk28}] -hold -start 1
 
@@ -28,6 +28,11 @@ set_false_path -from [get_cells {sysctrl/system_fastmem*}]
 set_false_path -from [get_cells {sysctrl/system_turbo*}]
 set_false_path -from [get_cells {sysctrl/system_volume*}]
 
+// the TG68K advances at most every second clk28 cycle (CPU_SLOW14 in
+// cpu_wrapper.v), so all its internal register to register paths are
+// true two cycle paths
+set_multicycle_path -from [get_regs {*cpu_inst_p/*}] -to [get_regs {*cpu_inst_p/*}] -setup -end 2
+set_multicycle_path -from [get_regs {*cpu_inst_p/*}] -to [get_regs {*cpu_inst_p/*}] -hold -end 1
 // The hdmi audio sample words cross from the 48kHz audio clock into the pixel
 // clock domain through a toggle handshake: the data is written a full audio
 // period (~10us) before the synchronized toggle releases the capture, so the

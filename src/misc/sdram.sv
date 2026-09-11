@@ -51,7 +51,8 @@ module sdram #(
   parameter RAM_CLOCK_SPEED  = 85_000_000,
   parameter SYNC_CLOCK_SPEED =  7_080_000,
   parameter CHIP48_BURST = 0,
-  parameter SYNC_DELAY = 4
+  parameter SYNC_DELAY = 4,
+  parameter ACK_DELAY = 1
 ) (
   input  wire clk,
   input  wire reset_n,  // init signal after FPGA config to initialize RAM
@@ -80,7 +81,6 @@ module sdram #(
   input wire  [1:0] ds,    // upper/lower data strobe
   input wire        cs,    // chipset requests read/write
   input wire        we,    // chipset requests write
-  output reg        ack,
 
   // cpu interface
   input  wire [15:0] p2_din,   // data input from cpu
@@ -91,7 +91,7 @@ module sdram #(
   input  wire  [1:0] p2_ds,    // upper/lower data strobe
   input  wire        p2_cs,    // cpu requests read/wrie
   input  wire        p2_we,    // cpu requests write
-  output reg         p2_ack
+  output wire        p2_ack
 );
 
 localparam WIDTH32 = (DATA_WIDTH == 32);
@@ -254,6 +254,8 @@ assign sd_cas = sd_cmd[1];
 assign sd_we  = sd_cmd[0];
 
 reg  [15:0] ram_din;
+reg         ram_we;
+reg   [1:0] ram_ds;
 
 wire [15:0] ram_dout_lo;
 wire [15:0] ram_dout_hi;
@@ -261,6 +263,8 @@ wire [15:0] ram_dout;
 
 reg                 sd_dq;
 reg [RAS_WIDTH-1:0] sd_addr_cas;
+
+reg p2_ack_i;
 
 generate
   if (WIDTH32) begin
@@ -320,7 +324,12 @@ always @(posedge clk) begin
         sd_addr_cas[CAS_WIDTH-1:0] <= addr32[CAS_WIDTH-1:0];
         sd_addr_cas[10] <= 1'b1;  // precharge
 
-        sd_ba   <= addr32[RAS_WIDTH+CAS_WIDTH+1:RAS_WIDTH+CAS_WIDTH];
+        sd_ba <= addr32[RAS_WIDTH+CAS_WIDTH+1:RAS_WIDTH+CAS_WIDTH];
+
+        ram_ds  <= ds;
+        ram_we  <= we;
+        ram_din <= din;
+
         addr_0  <= addr[0];
 
       end else if (p2_cs) begin
@@ -330,8 +339,13 @@ always @(posedge clk) begin
         sd_addr_cas[CAS_WIDTH-1:0] <= p2_addr32[CAS_WIDTH-1:0];
         sd_addr_cas[10] <= 1'b1;  // precharge
 
-        sd_ba   <= p2_addr32[RAS_WIDTH+CAS_WIDTH+1:RAS_WIDTH+CAS_WIDTH];
-        addr_0  <= p2_addr[0];
+        sd_ba <= p2_addr32[RAS_WIDTH+CAS_WIDTH+1:RAS_WIDTH+CAS_WIDTH];
+
+        ram_ds  <= p2_ds;
+        ram_we  <= p2_we;
+        ram_din <= p2_din;
+
+        addr_0 <= p2_addr[0];
       end
 
       if (sync_i) begin
@@ -340,17 +354,17 @@ always @(posedge clk) begin
 
         if (cs && !refresh) begin
           sdram_port <= PORT_1;
-          sd_cmd <= CMD_ACTIVE;
+          sd_cmd     <= CMD_ACTIVE;
 
         end else if (refreshcnt == 0 || (cs && refresh)) begin
           sdram_port <= PORT_REFRESH;
-          sd_cmd <= CMD_AUTO_REFRESH;
+          sd_cmd     <= CMD_NOP;
 
           refreshcnt <= SYNC_CYCLES_PER_REFRESH[REFRESHCNT_MAX_WIDTH-1:0];
 
         end else if (p2_cs) begin
           sdram_port <= PORT_2;
-          sd_cmd <= CMD_ACTIVE;
+          sd_cmd     <= CMD_ACTIVE;
         end
       end
     end
@@ -359,20 +373,19 @@ always @(posedge clk) begin
 
       case (sdram_port)
         PORT_1: begin
-          sd_cmd <= we ? CMD_WRITE : CMD_READ;
-          ram_din <= din;
-          if (we) begin
+          sd_cmd <= ram_we ? CMD_WRITE : CMD_READ;
+          if (ram_we) begin
             sd_dq <= 1;
-            ack   <= ~ack;
           end
         end
         PORT_2: begin
-          sd_cmd <= p2_we ? CMD_WRITE : CMD_READ;
-          ram_din <= p2_din;
-          if (p2_we) begin
-            sd_dq  <= 1;
-            p2_ack <= ~p2_ack;
+          sd_cmd <= ram_we ? CMD_WRITE : CMD_READ;
+          if (ram_we) begin
+            sd_dq <= 1;
           end
+        end
+        PORT_REFRESH: begin
+          sd_cmd <= CMD_AUTO_REFRESH;
         end
         default: ;
       endcase
@@ -381,11 +394,9 @@ always @(posedge clk) begin
       case (sdram_port)
         PORT_1 : begin
           dout <= ram_dout;
-          if (!we) ack <= ~ack;
         end
         PORT_2 : begin
           p2_dout <= ram_dout;
-          if (!p2_we) p2_ack <= ~p2_ack;
         end
         default: ;
       endcase
@@ -405,15 +416,21 @@ generate
       case (state)
         STATE_CAS: begin
           case (sdram_port)
-            PORT_1: if (we)    sd_dqm <= (addr_0 ? {2'b11,    ds} : {ds,    2'b11});
-            PORT_2: if (p2_we) sd_dqm <= (addr_0 ? {2'b11, p2_ds} : {p2_ds, 2'b11});
+            PORT_1: if (ram_we) sd_dqm <= (addr_0 ? {2'b11, ram_ds} : {ram_ds, 2'b11});
+            PORT_2: if (ram_we) begin
+              p2_ack_i <= ~p2_ack_i;
+              sd_dqm <= (addr_0 ? {2'b11, ram_ds} : {ram_ds, 2'b11});
+            end
             default: ;
           endcase
         end
         STATE_READ_0: begin
           case (sdram_port)
             PORT_1: dout48[47:32] <= ram_dout_lo;
-            PORT_2: p2_dout48[47:32] <= ram_dout_lo;
+            PORT_2: begin
+              if (!ram_we && !CHIP48_BURST) p2_ack_i <= ~p2_ack_i;
+              p2_dout48[47:32] <= ram_dout_lo;
+            end
             default: ;
           endcase
         end
@@ -443,6 +460,7 @@ generate
                 /* no-op */;
             end
             PORT_2: begin
+              if (!ram_we && CHIP48_BURST) p2_ack_i <= ~p2_ack_i;
               if (addr_0)
                 p2_dout48[15:0] <= {ram_dout_hi};
               else
@@ -462,8 +480,21 @@ generate
       case (state)
         STATE_CAS: begin
           case (sdram_port)
-            PORT_1: if (we)    sd_dqm <= ds;
-            PORT_2: if (p2_we) sd_dqm <= p2_ds;
+            PORT_1: if (ram_we) sd_dqm <= ram_ds;
+            PORT_2: if (ram_we) begin
+              p2_ack_i <= ~p2_ack_i;
+              sd_dqm <= ram_ds;
+            end
+            default: ;
+          endcase
+        end
+        STATE_READ_0: begin
+          case (sdram_port)
+            PORT_1: dout48[47:32] <= ram_dout;
+            PORT_2: begin
+              if (!ram_we && !CHIP48_BURST) p2_ack_i <= ~p2_ack_i;
+              p2_dout48[47:32] <= ram_dout;
+            end
             default: ;
           endcase
         end
@@ -484,13 +515,39 @@ generate
         STATE_READ_3: begin
           case (sdram_port)
             PORT_1: dout48[15: 0] <= ram_dout;
-            PORT_2: p2_dout48[15: 0] <= ram_dout;
+            PORT_2: begin
+              if (!ram_we && CHIP48_BURST) p2_ack_i <= ~p2_ack_i;
+              p2_dout48[15: 0] <= ram_dout;
+            end
             default: ;
           endcase
         end
         default: ;
       endcase
     end
+  end
+endgenerate
+
+generate
+  if (ACK_DELAY == 1) begin
+    reg p2_ack_d;
+
+    always @(posedge clk)
+      p2_ack_d <= p2_ack_i;
+
+    assign p2_ack = p2_ack_d;
+
+  end else if (ACK_DELAY > 1) begin
+    reg [ACK_DELAY-1:0] p2_ack_d;
+
+    always @(posedge clk) begin
+      p2_ack_d <= {p2_ack_d[ACK_DELAY-2:0], p2_ack_i};
+    end
+
+    assign p2_ack = p2_ack_d[ACK_DELAY-1];
+
+  end else begin
+    assign p2_ack = p2_ack_i;
   end
 endgenerate
 

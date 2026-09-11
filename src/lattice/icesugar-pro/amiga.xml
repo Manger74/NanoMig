@@ -9,57 +9,47 @@
       <load file="amiga.ini"/>
       <set id="R" value="1"/>  <!-- keep machine in reset -->
     </action>
-    
+
     <!-- the ready action is being executed once all -->
     <!-- initialization has been done -->
     <action name="ready">
       <set id="R" value="0"/>  <!-- release reset -->
     </action>
-      
+
     <action name="save">
       <!-- save config to sd card -->
       <save file="amiga.ini"/>
     </action>
-      
+
     <action name="reset">
       <!-- trigger a system reset -->
       <set id="R" value="1"/>
       <delay ms="10"/>
-      <set id="R" value="0"/>      
+      <set id="R" value="0"/>
     </action>
-    
+
     <action name="reset_hide">
       <!-- trigger a system reset and hide OSD -->
       <link action="reset"/>
-      <hide/>      
-    </action>      
+      <hide/>
+    </action>
   </actions>
-  
+
   <menu label="NanoMig">
     <fileselector label="Floppy DF0:" ext="adf" index="0"/>
     <menu label="System">
-        <!--IS mistle_gw5a_25 -->
 	<list label="CPU:" id="T" default="2" action="reset">
-	  <listentry label="68000" value="0"/>
-	  <listentry label="68010" value="1"/>
-	  <listentry label="68020" value="2"/>
-	</list>
-	<!--END-->
-	<!--IS tang_nano20k_020 -->
-	<list label="CPU:" id="T" default="1" action="reset">
 	<listentry label="68000" value="0"/>
-	<listentry label="68020" value="1"/>
+	<listentry label="68010" value="1"/>
+	<listentry label="68020" value="2"/>
       </list>
-	<!--END-->
-      <list label="Chipset:" id="C" default="2" action="reset">
+      <list label="Chipset:" id="C" default="3" action="reset">
 	<listentry label="OCS-A500" value="0"/>
 	<listentry label="OCS-A1000" value="1"/>
 	<listentry label="ECS" value="2"/>
-	<!--IS mistle_gw5a_25 tang_nano20k_020 -->
 	<listentry label="AGA" value="3"/>
-	<!--END-->
       </list>
-      <list label="Chipmem:" id="Y" default="0" action="reset">
+      <list label="Chipmem:" id="Y" default="3" action="reset">
 	<listentry label="512kB" value="0"/>
 	<listentry label="1MB" value="1"/>
 	<listentry label="1.5MB" value="2"/>
@@ -70,25 +60,22 @@
 	<listentry label="512kB" value="1"/>
 	<listentry label="1MB" value="2"/>
 	<listentry label="1.5MB" value="3"/>
-      </list>	
+      </list>
       <list label="Fastmem:" id="Q" default="0" action="reset">
 	<listentry label="None" value="0"/>
 	<listentry label="2MB" value="1"/>
 	<listentry label="4MB" value="2"/>
-	<!-- the gw3a_20 and gw5a_25 boards have 32 MB SDRAM and support 8MB -->
-	<!--IS mistle_gw3a_20 mistle_gw5a_25 -->
 	<listentry label="8MB" value="3"/>
-	<!--END-->
-      </list>	
+      </list>
       <list label="Turbo:" id="Z" default="3">
-    <listentry label="None" value="0"/>
-    <listentry label="Chip" value="1"/>
-    <listentry label="Kick" value="2"/>
-    <listentry label="Both" value="3"/>
+	<listentry label="None" value="0"/>
+	<listentry label="Chip" value="1"/>
+	<listentry label="Kick" value="2"/>
+	<listentry label="Both" value="3"/>
       </list>
       <list label="Turbo data:" id="U" default="0">
-    <listentry label="Disabled" value="0"/>
-    <listentry label="Enabled" value="1"/>
+	<listentry label="Disabled" value="0"/>
+	<listentry label="Enabled" value="1"/>
       </list>
       <list label="Video:" id="V" default="0">
 	<listentry label="PAL" value="0"/>
@@ -133,7 +120,7 @@
         <listentry label="50%" value="2"/>
         <listentry label="75%" value="3"/>
         <listentry label="100%" value="4"/>
-      </list>	
+      </list>
 	<list label="Stereo Mix:" id="M" default="1">
 		<listentry label="Disabled" value="0"/>
         <listentry label="Enabled" value="1"/>
@@ -150,20 +137,13 @@
 		<listentry label="Vertical" value="2"/>
 		<listentry label="Hor+Ver" value="3"/>
       </list>
-      <!-- the lcd variants have no HDMI and thus no use for overscan control -->
-      <!--NOT tang_nano20k_lcd -->
       <list label="Screen:" id="W" default="0">
 	<listentry label="Standard" value="0"/>
 	<listentry label="Overscan" value="1"/>
 	<listentry label="Wide" value="2"/>
       </list>
-      <!--END-->
-      <!-- the vertical lcd size is not sufficient for PAL, so position can be adjusted -->
-      <!--IS tang_nano20k_lcd -->
-      <range label="LCD V-Pos" id="B" min="-32" max="32" default="0"/>      
-      <!--END-->
       <button label="Save settings" action="save"/>
     </menu>
     <button label="Reset" action="reset_hide"/>
-  </menu>    
+  </menu>
 </config>

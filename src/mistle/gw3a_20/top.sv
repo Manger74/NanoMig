@@ -7,7 +7,7 @@
 `define ENABLE_AGA
 `define ENABLE_RAM32
 `define ENABLE_TG68K  // required for AGA as that expects a 020 cpu
-// `define CPU_SLOW14    // run TG68K at 14MHz effective (A1200 speed) for timing closure
+`define CPU_SLOW14    // run TG68K at 14MHz effective (A1200 speed) for timing closure
 // `define DENISE_EBR    // block ram based bitplane and sprite buffers, saves logic
 `define ENABLE_CACHE  // required for AGA as the 020 has caches
 `define CHIPRAM_CACHE // cache chip ram instruction fetches too (a1200 68ec020 style) with chip bus snooping
@@ -703,10 +703,8 @@ localparam CHIP48_BURST = 0
 ;
 
 sdram #(
-`ifdef ENABLE_AGA
-    .CHIP48_BURST(CHIP48_BURST),  // required only for AGA
-`endif
-    .SYNC_DELAY(2)
+    .SYNC_DELAY(2),
+    .CHIP48_BURST(CHIP48_BURST)   // the wide 64 bit fetch AGA or cache needs
 ) sdram (
     .sd_data    ( IO_sdram_dq   ), // 14 bit bidirectional data bus
     .sd_addr    ( O_sdram_addr  ), // 13 bit multiplexed address bus
@@ -734,7 +732,6 @@ sdram #(
     .ds         ( sdram_be      ), // upper/lower data strobe
     .cs         ( sdram_cs      ), // cpu/chipset requests read/wrie
     .we         ( sdram_we      ), // cpu/chipset requests write
-	.ack        (               ),
 		 
     .p2_din     ( fastram_din   ), // data input from cpu
     .p2_dout    ( fastram_dout  ),
