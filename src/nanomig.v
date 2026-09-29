@@ -54,7 +54,7 @@ module nanomig (
    // UART/RS232 for e.g. DiagROM or MIDI
    output	 uart_tx,
    input	 uart_rx,
-
+   
 `ifdef ENABLE_RTC
    // RTC time information as e.g. received via NTP
    input [11:0]	 rtc,
