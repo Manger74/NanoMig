@@ -5,9 +5,6 @@
     <Version>5</Version>
     <Device name="GW2AR-18C" pn="GW2AR-LV18QN88C8/I7">gw2ar18c-000</Device>
     <FileList>
-        <File path="tang/nano20k/top_020.sv" type="file.verilog" enable="1"/>
-        <File path="tang/nano20k/nanomig.cst" type="file.cst" enable="1"/>
-        <File path="tang/nano20k/nanomig_020.sdc" type="file.sdc" enable="1"/>
         <File path="fx68k/fx68k.sv" type="file.verilog" enable="1"/>
         <File path="fx68k/fx68kAlu.sv" type="file.verilog" enable="1"/>
         <File path="fx68k/uaddrPla.sv" type="file.verilog" enable="1"/>
@@ -78,6 +75,7 @@
         <File path="minimig-aga/userio.v" type="file.verilog" enable="1"/>
         <File path="minimig/Amber.v" type="file.verilog" enable="1"/>
         <File path="misc/amiga_keymap.v" type="file.verilog" enable="1"/>
+        <File path="misc/drive_sounds.v" type="file.verilog" enable="1"/>
         <File path="misc/flash_dspi.v" type="file.verilog" enable="1"/>
         <File path="misc/hid.v" type="file.verilog" enable="1"/>
         <File path="misc/mcu_spi.v" type="file.verilog" enable="1"/>
@@ -94,10 +92,13 @@
         <File path="tang/nano20k/amigaclks.v" type="file.verilog" enable="1"/>
         <File path="tang/nano20k/gowin_dpb/ide_dpram.v" type="file.verilog" enable="1"/>
         <File path="tang/nano20k/gowin_dpb/sector_dpram.v" type="file.verilog" enable="1"/>
+        <File path="tang/nano20k/top_020.sv" type="file.verilog" enable="1"/>
         <File path="tg68k/TG68K.vhd" type="file.vhdl" enable="1"/>
         <File path="tg68k/TG68K_ALU.vhd" type="file.vhdl" enable="1"/>
         <File path="tg68k/TG68K_Pack.vhd" type="file.vhdl" enable="1"/>
         <File path="tg68k/TG68KdotC_Kernel.vhd" type="file.vhdl" enable="1"/>
+        <File path="tang/nano20k/nanomig.cst" type="file.cst" enable="1"/>
+        <File path="tang/nano20k/nanomig_020.sdc" type="file.sdc" enable="1"/>
         <File path="fx68k/microrom.mem" type="file.other" enable="1"/>
         <File path="fx68k/nanorom.mem" type="file.other" enable="1"/>
         <File path="misc/amiga_xml.hex" type="file.other" enable="1"/>
