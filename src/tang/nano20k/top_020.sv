@@ -21,6 +21,7 @@
 `define DENISE_EBR   // block ram based bitplane and sprite buffers, saves logic
 `define DISABLE_ROM_LOADER // drop the rom loader to make room 
 `define ENABLE_DRIVE_SOUNDS
+`define ENABLE_RTC
 `define ENABLE_MODEM
 
 module top(
@@ -483,14 +484,6 @@ hid hid (
         .joystick1(hid_joy1)
          );   
 
-wire [31:0] serial_status;
-wire [7:0] serial_tx_available;
-wire       serial_tx_strobe;
-wire [7:0] serial_tx_data;
-wire [7:0] serial_rx_available;
-wire       serial_rx_strobe;
-wire [7:0] serial_rx_data;
-
 // time information for rtc received via NTP
 wire [11:0] rtc;  
 
@@ -502,22 +495,22 @@ sysctrl #(
         .clk(clk_28m),
         .reset(rst_28m),
 
-      // interface to send and receive generic system control
-    .data_in_strobe(mcu_sys_strobe),
-    .data_in_start(mcu_start),
-    .data_in(mcu_data_out),
-    .data_out(sys_data_out),
+    // interface to send and receive generic system control
+  .data_in_strobe(mcu_sys_strobe),
+  .data_in_start(mcu_start),
+  .data_in(mcu_data_out),
+  .data_out(sys_data_out),
 
-    // port io (used to expose rs232)
-    .port_status(serial_status),
-    .port_out_available(serial_tx_available),
-    .port_out_strobe(serial_tx_strobe),
-    .port_out_data(serial_tx_data),	 
-    .port_in_available(serial_rx_available),
-    .port_in_strobe(serial_rx_strobe),
-    .port_in_data(serial_rx_data),	 
+  // port io (used to expose rs232)
+  .port_status(serial_status),
+  .port_out_available(serial_tx_available),
+  .port_out_strobe(serial_tx_strobe),
+  .port_out_data(serial_tx_data),	 
+  .port_in_available(serial_rx_available),
+  .port_in_strobe(serial_rx_strobe),
+  .port_in_data(serial_rx_data),	 
 
-		.rtc(rtc),	
+  .rtc(rtc),	
 
         // values controlled by the OSD
 	.system_reset(osd_reset),
