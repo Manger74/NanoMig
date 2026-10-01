@@ -62,6 +62,7 @@ These youtube shorts mainly document the progress:
 
 The necessary binaries can be found in the [project releases](https://github.com/MiSTle-Dev/NanoMig/releases).
 
+## TANG NANO 20K
   * ```nanomig.fs``` needs to be flashed to the FPGA's flash memory
     * ```openFPGALoader -f nanomig.fs```
     * Currently supported are Tang Nano 20k with HDMI (```nanomig.fs```), Tang Nano 20k with RGB LCD (```nanomig_lcd.fs```), Tang Primer 25k (```nanomig_tp25k.fs```), Tang Mega 138k Pro (```nanomig_tm128k.fs```), Tang Console 60k (```nanomig_tc60k.fs```) and Tang Console 138k (```nanomig_tc128k_bl616.fs```)
@@ -72,48 +73,37 @@ The necessary binaries can be found in the [project releases](https://github.com
     See here for [checksums of known working Kickstart roms.](https://github.com/MiSTle-Dev/NanoMig/blob/main/doc/KICKSTART_ROMS.md)
   * For IDE HDD support 512kB Kickstart 3.1 ```kick31.rom``` needs to be flashed at offset 0x400000 (138k: 0x600000) only.
     * ```openFPGALoader --external-flash -o 0x400000 kick31.rom```
+
+## ICEPI-ZERO 
+Windows: Download and install OSS CAD SUITE ([download](https://github.com/YosysHQ/oss-cad-suite-build/releases)) and Zadig ([download](https://zadig.akeo.ie/))
+
+1.) Connect your FPGA board with your computer via USB.  
+Open Zadig and select Options -> List All Devices in Zadig.  
+Choose your FPGA cable or interface from the drop-down menu.  
+Change the target driver to WinUSB and click Replace Driver (or Install Driver).  
+2.) flash the NanoMig to ICEPI  
+```openFPGALoader -c ft231X --pins=7:3:5:6 -f nanomig_impl.bit```  
+3.) flash Kickstart  
+```openFPGALoader -c ft231X --pins=7:3:5:6 -f -o 0x400000 kick31.rom```   
+4.) connect ICEPI & Carrier  
+5.) push button on Carrier and connect it via USB to your Computer to flash the FPGA-Companion ([download](fpga_companion.uf2))
+
+## FPGA-Companion
   * The [latest FPGA Companion firmware](http://github.com/harbaum/FPGA-Companion) needs to be flashed to the support MCU
     * Currenly supported are [M0S Dock (BL616)](https://github.com/harbaum/FPGA-Companion/tree/main/src/bl616), [Raspberry Pi Pico (RP2040)](https://github.com/harbaum/FPGA-Companion/tree/main/src/rp2040), [ESP32-S2/S3](https://github.com/harbaum/FPGA-Companion/tree/main/src/esp32)  
     and TN20k, Console 60k/138k, Primer25k, Mega138k Pro integrated [onboard BL616](https://en.bouffalolab.com/) MPU
   * A default ADF disk image named ```df0.adf``` should be placed on SD card (e.g. workbench 1.3)
   * For the SD card to work [all components incl. the support MCU](https://github.com/harbaum/NanoMig/issues/5) have to work properly
+
+ ## Tools 
   * For preparation of HDF images the HST-Imager works best. [HST-Imager](https://github.com/henrikstengaard/hst-imager) 
   * Professional Filesystem 3 (PFS3) is recommended for HDDs. [PFS3](https://aminet.net/package/disk/misc/pfs3aio)
   * Use ADF-Opus to create and modify ADF images under Windows [ADFOpus2025](https://github.com/chironb/ADFOpus2025)
 * With Disk Flashback you can mount ADF's & HDF's under Windows [Disk Flashback](https://robsmithdev.co.uk/diskflashback)
 
-## ICEPI-ZERO 
-Windows: Download and install OSS CAD SUITE ([download](https://github.com/YosysHQ/oss-cad-suite-build/releases)) and Zadig ([download](https://zadig.akeo.ie/))
-
-1.) Plug your FPGA board into your computer via USB.  
-Open Zadig and select Options -> List All Devices in Zadig.  
-Choose your FPGA cable or interface from the drop-down menu.  
-Change the target driver to WinUSB and click Replace Driver (or Install Driver).  
-2.) flash NanoMig to ICEPI  
-```openFPGALoader -c ft231X --pins=7:3:5:6 -f nanomig_impl.bit```  
-3.) flash Kickstart  
-```openFPGALoader -c ft231X --pins=7:3:5:6 -f -o 0x400000 kick31.rom```   
-4.) connect ICEPI & Carrier  
-5.) push button on Carrier and connect it via USB to your Computer to flash FPGA-Companion ([download](fpga_companion.uf2))
-
 ## Rigid Disk Block Info
 Please make sure to use RDB (Rigid Disk Block) images with a **Start Offset 0**.  
 If unallocated space is present before the RDB, the HDF image won't be recognized.
-
-## Credits
-
-The **NanoMig** contains code written by:
-
-Till Harbaum  
-Alastair M. Robinson  
-Mateusz Nalewajski  
-Tobias Gubener  
-Rok Krajnc  
-Dennis van Weeren  
-
-Special thanks to **Till Harbaum** ([harbaum](https://github.com/harbaum)) for the invention of the **NanoMig**!  
-Many thanks to **Alastair M. Robinson** ([robinsonb5](https://github.com/robinsonb5)) for his contributions to the **NanoMig**, in particular **Fastram** and **68020** cpu!  
-Many thanks to **Mateusz Nalewajski** ([m1nl](https://github.com/m1nl)) and **djnice** ([djnice](https://github.com/djnice)) for the implementation of the **AGA chipset** with Embedded Block Ram and many more contributions!
 
 ## Build setting (Tang Nano 20K only!)
 The core needs to be able to react on bl616 jtagsel Signal (all boards except tn20k).  
@@ -142,3 +132,19 @@ Only for the TN20K: **Use JTAG as regular IO** must be unselected in Gowin EDA C
 | Left Amiga | Left meta (Windows) key |
 | Right Amiga | Right meta / Page Down |
 | Help | End / Insert |
+
+## Credits
+
+The **NanoMig** contains code written by:
+
+Till Harbaum  
+Alastair M. Robinson  
+Mateusz Nalewajski  
+Tobias Gubener  
+Rok Krajnc  
+Dennis van Weeren  
+
+Special thanks to **Till Harbaum** ([harbaum](https://github.com/harbaum)) for the invention of the **NanoMig**!  
+Many thanks to **Alastair M. Robinson** ([robinsonb5](https://github.com/robinsonb5)) for his contributions to the **NanoMig**, in particular **Fastram** and **68020** cpu!  
+Many thanks to **Mateusz Nalewajski** ([m1nl](https://github.com/m1nl)) and **djnice** ([djnice](https://github.com/djnice)) for the implementation of the **AGA chipset** with Embedded Block Ram and many more contributions!
+
