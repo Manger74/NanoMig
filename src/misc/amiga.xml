@@ -107,7 +107,7 @@
 	<listentry label="On" value="1"/>
       </list>
       <!--IS tang_nano20k tang_nano20k_020 tang_nano20k_lcd -->
-      <list label="Serial:" id="O" default="0">
+      <list label="Serial port:" id="O" default="0">
 	<listentry label="Modem" value="0"/>
 	<listentry label="Midi" value="1"/>
       </list>
