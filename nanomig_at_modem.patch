@@ -1,0 +1,955 @@
+diff -ruN --strip-trailing-cr ./src/minimig-aga/minimig.v ./src/minimig-aga/minimig.v
+--- a/src/minimig-aga/minimig.v	2026-10-13 15:37:44.000000000 +0000
++++ b/src/minimig-aga/minimig.v	2026-10-15 20:45:30.582884564 +0000
+@@ -189,6 +189,13 @@
+ 	//rs232 pins
+ 	input	      rxd, // rs232 receive
+ 	output	      txd, // rs232 send
++`ifdef ENABLE_AT_MODEM
++	output [14:0] uart_serper, // paula SERPER (baud rate)
++	output	      uart_rbf,    // paula receive buffer full
++	output [7:0]  uart_tx_byte, // byte paula starts to send
++	output	      uart_tx_push, // uart_tx_byte is valid
++	input	      uart_hold,   // hold paula transmitter
++`endif
+ 	input	      cts, // rs232 clear to send
+ 	output	      rts, // rs232 request to send
+ 	output	      dtr, // rs232 Data Terminal Ready
+@@ -498,6 +505,13 @@
+ 	.data_out(paula_data_out),
+ 	.txd(txd),
+ 	.rxd(rxd),
++`ifdef ENABLE_AT_MODEM
++	.uart_serper(uart_serper),
++	.uart_rbf(uart_rbf),
++	.uart_tx_byte(uart_tx_byte),
++	.uart_tx_push(uart_tx_push),
++	.uart_hold(uart_hold),
++`endif
+ 	.ntsc(ntsc),
+ 	.sof(sof),
+ 	.strhor(strhor_paula),
+diff -ruN --strip-trailing-cr ./src/minimig-aga/paula.v ./src/minimig-aga/paula.v
+--- a/src/minimig-aga/paula.v	2026-10-13 15:37:44.000000000 +0000
++++ b/src/minimig-aga/paula.v	2026-10-15 20:45:30.581758373 +0000
+@@ -70,6 +70,13 @@
+ 	//serial (uart) 
+ 	output        txd,					//serial port transmitted data
+ 	input         rxd,			  		//serial port received data
++`ifdef ENABLE_AT_MODEM
++	output [14:0] uart_serper,	//uart baud rate setting
++	output        uart_rbf,		//uart receive buffer full
++	output [7:0]  uart_tx_byte,	//byte the uart starts to send
++	output        uart_tx_push,	//uart_tx_byte is valid
++	input         uart_hold,		//hold uart transmitter
++`endif
+ 	//interrupts and dma
+ 	input         ntsc,         // PAL/NTSC mode
+ 	input         sof,          // start of vertical frame
+@@ -214,8 +221,19 @@
+ 	.txint(txint),
+ 	.rxd(rxd),
+ 	.txd(txd)
++`ifdef ENABLE_AT_MODEM
++	,
++	.serper_o(uart_serper),
++	.tx_byte_o(uart_tx_byte),
++	.tx_push_o(uart_tx_push),
++	.tx_hold(uart_hold)
++`endif
+ );
+ 
++`ifdef ENABLE_AT_MODEM
++assign uart_rbf = rbfmirror;
++`endif
++
+ //instantiate interrupt controller
+ paula_intcontroller pi1
+ (
+diff -ruN --strip-trailing-cr ./src/minimig-aga/paula_uart.v ./src/minimig-aga/paula_uart.v
+--- a/src/minimig-aga/paula_uart.v	2026-10-13 15:37:44.000000000 +0000
++++ b/src/minimig-aga/paula_uart.v	2026-10-15 20:45:30.581176437 +0000
+@@ -14,6 +14,13 @@
+   output wire           rxint,
+   output wire           txd,
+   input  wire           rxd
++`ifdef ENABLE_AT_MODEM
++  ,
++  output wire [ 15-1:0] serper_o, // baud rate setting for the AT modem bridge
++  output wire [  8-1:0] tx_byte_o,// byte being sent, valid while tx_push_o
++  output wire           tx_push_o,// one clk pulse when a frame is started
++  input  wire           tx_hold   // bridge fifo full: don't start another frame
++`endif
+ );
+ 
+ 
+@@ -32,6 +39,11 @@
+ localparam RXD_BIT   = 11-11;
+ 
+ 
++`ifndef ENABLE_AT_MODEM
++wire           tx_hold = 1'b0;
++`endif
++
++
+ //// RX input sync ////
+ reg  [  2-1:0] rxd_sync = 2'b11;
+ wire           rxds;
+@@ -88,7 +100,7 @@
+           // txd pin inactive in idle state
+           tx_txd <= #1 1'b1;
+           // check if new data loaded to serdat register
+-          if (!tx_tbe) begin
++          if (!tx_tbe && !tx_hold) begin
+             // set interrupt request
+             tx_irq <= #1 1'b1;
+             // data buffer empty again
+@@ -136,7 +148,7 @@
+       if (uartbrk) tx_txd <= #1 1'b0;
+       // handle tbe bit
+       //if (rga_i == REG_SERDAT[8:1]) tx_tbe <= #1 1'b0;
+-      tx_tbe <= #1 (rga_i == REG_SERDAT[8:1]) ? 1'b0 : ((tx_state == TX_IDLE) ? 1'b1 : tx_tbe);
++      tx_tbe <= #1 (rga_i == REG_SERDAT[8:1]) ? 1'b0 : ((tx_state == TX_IDLE && !tx_hold) ? 1'b1 : tx_tbe);
+     end
+   end
+ end
+@@ -254,6 +266,18 @@
+ // uart output
+ assign txd   = tx_txd;
+ 
++`ifdef ENABLE_AT_MODEM
++assign serper_o = serper[14:0];
++
++// hand every byte over to the AT modem bridge when its frame is started
++// (same condition as the load of tx_shift above)
++reg tx_push;
++always @ (posedge clk)
++  tx_push <= clk7_en && !reset && tx_state == TX_IDLE && !tx_tbe && !tx_hold;
++assign tx_byte_o = serdat[7:0];
++assign tx_push_o = tx_push;
++`endif
++
+ // reg bus output
+ assign data_o = (rga_i == REG_SERDATR[8:1]) ? {serdatr, 1'b0, rx_data} : 16'h0000;
+ 
+diff -ruN --strip-trailing-cr ./src/misc/amiga.xml ./src/misc/amiga.xml
+--- a/src/misc/amiga.xml	2026-10-13 15:37:44.000000000 +0000
++++ b/src/misc/amiga.xml	2026-10-15 20:55:34.336441249 +0000
+@@ -106,6 +106,12 @@
+ 	<listentry label="Off" value="0"/>
+ 	<listentry label="On" value="1"/>
+       </list>
++      <!--IS tang_nano20k tang_nano20k_020 tang_nano20k_lcd -->
++      <list label="Serial:" id="O" default="0">
++	<listentry label="Modem" value="0"/>
++	<listentry label="Midi" value="1"/>
++      </list>
++      <!--END-->
+       <!--IS ENABLE_ROM_LOADER -->
+       <image label="Kickstart" index="0" none_str="&lt;flash&gt;" none_icn="003c7e3c7e3c7e3c" ext="rom" default="kick.rom" action="reset_hide"/>
+       <!--END-->
+diff -ruN --strip-trailing-cr ./src/misc/io_fifo.v ./src/misc/io_fifo.v
+--- a/src/misc/io_fifo.v	1970-01-01 00:00:00.000000000 +0000
++++ b/src/misc/io_fifo.v	2026-10-15 20:45:30.584365099 +0000
+@@ -0,0 +1,100 @@
++//
++// io_fifo.v
++//
++// Atari ST(E) io controller FIFO for the MiST board
++// https://github.com/mist-devel/mist-board
++//
++// Copyright (c) 2013 Till Harbaum <till@harbaum.org> 
++//
++// This source file is free software: you can redistribute it and/or modify 
++// it under the terms of the GNU General Public License as published 
++// by the Free Software Foundation, either version 3 of the License, or 
++// (at your option) any later version. 
++//
++// This source file is distributed in the hope that it will be useful,
++// but WITHOUT ANY WARRANTY; without even the implied warranty of 
++// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the 
++// GNU General Public License for more details.
++//
++// You should have received a copy of the GNU General Public License 
++// along with this program.  If not, see <http://www.gnu.org/licenses/>. 
++
++// TODO: Make this truly async
++// http://www.asic-world.com/examples/verilog/asyn_fifo.html
++
++module io_fifo #(
++ parameter DATA_WIDTH = 8,
++ parameter DEPTH = 4
++)(
++	input reset,
++	
++	input [DATA_WIDTH-1:0] in,
++	input in_clk,
++	input in_strobe,
++	input in_enable,
++	
++	input out_clk,
++	output [DATA_WIDTH-1:0] out,
++	input out_strobe,
++	input out_enable,
++
++	output [DEPTH-1:0] space,
++	output empty,
++	output [DEPTH-1:0] used,
++	output full
++);
++
++localparam FIFO_ADDR_BITS = DEPTH;
++localparam FIFO_DEPTH = (1 << FIFO_ADDR_BITS);
++
++reg [DATA_WIDTH-1:0] fifo [FIFO_DEPTH-1:0];
++reg [FIFO_ADDR_BITS-1:0] writeP, readP;
++
++// 1'd1: keep the sum as wide as the pointers, otherwise full is never
++// detected for writeP == 4'hf (the unsized 1 makes the sum 32 bit wide)
++assign full = (readP == (writeP + 1'd1));
++assign empty = (readP == writeP);
++assign used = writeP - readP;
++
++assign space = readP - writeP - 1'd1;
++
++// the strobes may not be in the right clock domain, so bring them into the 
++// local clock domain
++reg in_strobeD, in_strobeD2;
++reg out_strobeD, out_strobeD2;
++
++// present current value (only valid while the fifo is not empty)
++assign out = fifo[readP];
++
++always @(posedge out_clk) begin
++	// bring strobes in local clock domain
++	out_strobeD <= out_strobe;
++	out_strobeD2 <= out_strobeD;
++	
++	if(reset)
++		readP <= 0;
++	else begin
++		// rising edge on fifo read strobe from io controller
++		if((out_strobeD && !out_strobeD2) || out_enable)
++			readP <= readP + 1'd1;
++	end
++end
++
++always @(posedge in_clk) begin
++	// bring strobes in local clock domain
++	in_strobeD <= in_strobe;
++	in_strobeD2 <= in_strobeD;
++	
++	if(reset)
++		writeP <= 0;
++	else begin
++		// rising edge on strobe signal causes write
++		// or in_enable being true
++		if((in_strobeD && !in_strobeD2) || in_enable) begin
++			fifo[writeP] <= in;
++			writeP <= writeP + 1'd1;
++		end
++	end
++end	
++
++endmodule
+diff -ruN --strip-trailing-cr ./src/misc/sysctrl.v ./src/misc/sysctrl.v
+--- a/src/misc/sysctrl.v	2026-10-13 15:37:44.000000000 +0000
++++ b/src/misc/sysctrl.v	2026-10-15 20:55:34.337281921 +0000
+@@ -30,6 +30,17 @@
+ 
+   output reg	    jtagsel, // FPGA Companion requests activation of JTAG
+ 
++`ifdef ENABLE_AT_MODEM
++  // IO port interface (serial port / virtual AT modem)
++  input [31:0]	    port_status, // status bits to report additional info about the port
++  input [7:0]	    port_out_available, // number of bytes available for transmission to MCU
++  output reg	    port_out_strobe,
++  input [7:0]	    port_out_data,
++  input [7:0]	    port_in_available, // number of unused bytes in the input buffer
++  output reg	    port_in_strobe,
++  output reg [7:0]  port_in_data,
++`endif
++
+ `ifdef ENABLE_RTC
+   output reg [11:0] rtc, // toggle bit, 3 bit index, 8 bit data
+ `endif
+@@ -55,6 +66,9 @@
+   output reg	    system_stereo_mix,
+   output reg [1:0]  system_kickstart,
+   output reg 		system_drive_sounds,
++`ifdef ENABLE_AT_MODEM
++  output reg	    system_serial_midi, // serial port: 0 = AT modem, 1 = pins/midi
++`endif
+   output reg [7:0]  system_lcd_v_pos
+ );
+ 
+@@ -94,6 +108,12 @@
+ reg [7:0] rtc_cmd;
+ `endif
+ 
++`ifdef ENABLE_AT_MODEM
++reg       port_out_availableD;
++reg [7:0] port_cmd;
++reg [7:0] port_index;
++`endif
++
+ always @(posedge clk)
+      menu_rom_data <= amiga_xml[menu_rom_addr];
+ 
+@@ -116,6 +136,10 @@
+ `ifdef ENABLE_RTC
+       rtc <= 12'h000;
+ `endif
++`ifdef ENABLE_AT_MODEM
++      port_out_strobe <= 1'b0;
++      port_in_strobe <= 1'b0;
++`endif
+ 
+       // OSD value defaults. These should be sane defaults, but the MCU
+       // will very likely override these early
+@@ -138,6 +162,9 @@
+ 	  system_stereo_mix <= 1'b1;
+       system_kickstart <= 2'b01;
+ 	  system_drive_sounds <= 1'b0;
++`ifdef ENABLE_AT_MODEM
++      system_serial_midi <= 1'b0;
++`endif
+    end
+    else
+    begin // if (reset)
+@@ -162,6 +189,16 @@
+       // iack bit 0 acknowledges the coldboot notification
+       if(int_ack[0]) sys_int <= 1'b0;
+ 
++`ifdef ENABLE_AT_MODEM
++      port_out_strobe <= 1'b0;
++      port_in_strobe <= 1'b0;
++
++      // (further) data has just become available, so raise interrupt
++      port_out_availableD <= (port_out_available != 8'd0);
++      if(port_out_available != 8'd0 && !port_out_availableD)
++	sys_int <= 1'b1;
++`endif
++
+       // monitor buttons for changes and raise interrupt
+       if(buttons_irq_enable) begin
+         if(buttonsD2 != buttonsD) begin
+@@ -263,6 +300,10 @@
+ 		   if(id == "K") system_kickstart <= data_in[1:0];
+            // Value "E": Drive Sounds disabled(0) or enabled(1)
+ 		   if(id == "E") system_drive_sounds <= data_in[0];
++`ifdef ENABLE_AT_MODEM
++           // Value "O": Serial port AT modem(0) or pins/midi(1)
++		   if(id == "O") system_serial_midi <= data_in[0];
++`endif
+ 		   // value "B": lcd vertical position (used in lcd variant, only)
+ 		   if(id == "B") system_lcd_v_pos <= data_in;
+                 end
+@@ -281,12 +322,18 @@
+             // CMD 6: read system interrupt source
+             if(command == 8'd6) begin
+                 // bit[0]: coldboot flag
++	        // bit[1]: port data is available
+ 	        // bit[2]: buttons state change has been detected
++`ifdef ENABLE_AT_MODEM
++                data_out <= { 5'b0000, !buttons_irq_enable, (port_out_available != 8'd0), coldboot };
++`else
+                 data_out <= { 5'b0000, !buttons_irq_enable, 1'b0, coldboot };
++`endif
+                 // reading the interrupt source acknowledges the coldboot notification
+                 if(state == 4'd0) coldboot <= 1'b0;
+             end
+ 
++`ifdef ENABLE_AT_MODEM
+ 	    // CMD 7: port command (e.g. rs232)
+             if(command == 8'd7) begin
+ 
+@@ -337,6 +384,7 @@
+ 		  
+ 	       end
+             end // if (command == 8'd7)
++`endif
+ 
+             // CMD 8: read (menu) config
+             if(command == 8'd8) begin
+diff -ruN --strip-trailing-cr ./src/misc/uart_port.v ./src/misc/uart_port.v
+--- a/src/misc/uart_port.v	1970-01-01 00:00:00.000000000 +0000
++++ b/src/misc/uart_port.v	2026-10-16 06:53:23.730160599 +0000
+@@ -0,0 +1,227 @@
++/*
++    uart_port.v
++
++    Bridge between the serial port of the Amiga (paula_uart, bit level)
++    and the "port" interface of the FPGA Companion (byte level, see
++    sysctrl.v command 7). The companion offers a virtual Hayes/AT modem
++    on that port, exactly as it does for the MFP of the MiSTeryNano.
++
++    Frames are 8N1, the bit timing for the receive direction is derived
++    from the SERPER register of paula, so the bridge follows whatever baud
++    rate the Amiga software selects.
++
++    amiga -> mcu: paula hands over each byte when it starts to send it
++                  (tx_byte/tx_push) and the byte goes into a fifo. While
++                  that fifo is full the transmitter of paula is held back
++                  (hold), so no data is lost.
++    mcu -> amiga: bytes from the mcu fifo are sent as frames to rxd of
++                  paula. The next byte is not sent before the previous
++                  one has been read by the Amiga (rbf cleared), so
++                  the receiver never overruns.
++
++    AT_MODEM_LITE: small variant for tight builds. Instead of the fifos
++    there is a single byte buffer per direction. Nothing is lost, as
++    paula is held back while the tx byte is not yet read by the mcu and
++    the mcu is told that there is no room while the rx byte is pending,
++    but each byte needs one access of the mcu.
++*/
++
++module uart_port (
++  input             clk,        // 28 MHz system clock
++  input             clk7_en,    // 7 MHz enable, bit times are counted in these
++  input             reset,
++
++  // paula side
++  input [14:0]      serper,     // SERPER, bit time is 2*serper+2 clk7 cycles
++  input             rbf,        // receive buffer full (intreq[11])
++  input [7:0]       tx_byte,    // byte paula starts to send ...
++  input             tx_push,    // ... valid for one clk while this is high
++  output            rxd,        // serial data to paula
++  output            hold,       // tx fifo is full, paula must not start a frame
++
++  // mcu side (same names as in MiSTeryNano atarist.v)
++  output [31:0]     serial_status,
++  output [7:0]      serial_tx_available,  // bytes waiting for the mcu
++  input             serial_tx_strobe,
++  output [7:0]      serial_tx_data,
++  output [7:0]      serial_rx_available,  // free bytes in fifo to paula
++  input             serial_rx_strobe,
++  input [7:0]       serial_rx_data
++);
++
++`ifdef AT_MODEM_LITE
++
++// ------------------------------------------------------------------
++// amiga -> mcu: one byte
++// ------------------------------------------------------------------
++
++reg [7:0] tx_reg;
++reg       tx_full;
++
++assign hold = tx_full;
++assign serial_tx_available = { 7'd0, tx_full };
++assign serial_tx_data = tx_reg;
++
++always @(posedge clk) begin
++  if(reset) tx_full <= 1'b0;
++  else begin
++    if(serial_tx_strobe) tx_full <= 1'b0;   // mcu has read the byte
++    if(tx_push) begin                       // only while !hold
++      tx_reg <= tx_byte;
++      tx_full <= 1'b1;
++    end
++  end
++end
++
++// ------------------------------------------------------------------
++// mcu -> amiga: the byte is stored directly in the frame shift register
++// ------------------------------------------------------------------
++
++reg [9:0]  rx_sr;             // stop, 8 data bits, start (lsb first out)
++reg [3:0]  rx_bits;
++reg [15:0] rx_cnt;
++reg        rx_full;           // byte pending or being sent
++reg        rx_busy;
++
++assign rxd = rx_busy ? rx_sr[0] : 1'b1;
++assign serial_rx_available = { 7'd0, !rx_full };
++
++always @(posedge clk) begin
++  if(reset) begin
++    rx_full <= 1'b0;
++    rx_busy <= 1'b0;
++  end else begin
++    if(serial_rx_strobe && !rx_full) begin
++      rx_sr <= { 1'b1, serial_rx_data, 1'b0 };
++      rx_full <= 1'b1;
++    end
++
++    if(clk7_en) begin
++      if(!rx_busy) begin
++        // don't start while the baud rate is unset (serper == 0)
++        if(rx_full && (serper != 15'd0) && !rbf) begin
++          rx_bits <= 4'd10;
++          rx_cnt <= { serper, 1'b1 };
++          rx_busy <= 1'b1;
++        end
++      end else if(rx_cnt == 16'd0) begin
++        rx_sr <= { 1'b1, rx_sr[9:1] };
++        rx_cnt <= { serper, 1'b1 };
++        rx_bits <= rx_bits - 4'd1;
++        if(rx_bits == 4'd1) begin
++          rx_busy <= 1'b0;
++          rx_full <= 1'b0;
++        end
++      end else
++        rx_cnt <= rx_cnt - 16'd1;
++    end
++  end
++end
++
++`else
++
++// ------------------------------------------------------------------
++// amiga -> mcu
++// ------------------------------------------------------------------
++
++// 8 entries (7 usable) are enough as paula is held back when full
++localparam DEPTH = 3;
++
++wire       tx_full;
++wire [DEPTH-1:0] tx_used;
++
++assign hold = tx_full;
++assign serial_tx_available = { {(8-DEPTH){1'b0}}, tx_used };
++
++io_fifo #(.DEPTH(DEPTH)) tx_fifo (
++  .reset      ( reset ),
++
++  .in_clk     ( clk ),
++  .in         ( tx_byte ),
++  .in_strobe  ( 1'b0 ),
++  .in_enable  ( tx_push ),
++
++  .out_clk    ( clk ),
++  .out        ( serial_tx_data ),
++  .out_strobe ( serial_tx_strobe ),
++  .out_enable ( 1'b0 ),
++
++  .space      (  ),
++  .used       ( tx_used ),
++  .empty      (  ),
++  .full       ( tx_full )
++);
++
++// ------------------------------------------------------------------
++// mcu -> amiga
++// ------------------------------------------------------------------
++
++wire [7:0] rx_byte;
++wire       rx_empty;
++reg        rx_pop;
++
++wire [DEPTH-1:0] rx_space;
++assign serial_rx_available = { {(8-DEPTH){1'b0}}, rx_space };
++
++io_fifo #(.DEPTH(DEPTH)) rx_fifo (
++  .reset      ( reset ),
++
++  .in_clk     ( clk ),
++  .in         ( serial_rx_data ),
++  .in_strobe  ( serial_rx_strobe ),
++  .in_enable  ( 1'b0 ),
++
++  .out_clk    ( clk ),
++  .out        ( rx_byte ),
++  .out_strobe ( 1'b0 ),
++  .out_enable ( rx_pop ),
++
++  .space      ( rx_space ),
++  .empty      ( rx_empty ),
++  .full       (  )
++);
++
++reg [9:0]  rx_sr = 10'h3ff;   // stop, 8 data bits, start (lsb first out)
++reg [3:0]  rx_bits;
++reg [15:0] rx_cnt;
++reg        rx_busy;
++
++assign rxd = rx_sr[0];
++
++// don't start while the baud rate is unset (serper == 0)
++wire rx_start = !rx_busy && !rx_empty && (serper != 15'd0) && !rbf;
++
++always @(posedge clk) begin
++  rx_pop <= 1'b0;
++
++  if(reset) begin
++    rx_sr <= 10'h3ff;
++    rx_busy <= 1'b0;
++  end else if(clk7_en) begin
++    if(rx_start) begin
++      rx_sr <= { 1'b1, rx_byte, 1'b0 };
++      rx_bits <= 4'd10;
++      rx_cnt <= { serper, 1'b1 };
++      rx_busy <= 1'b1;
++      rx_pop <= 1'b1;
++    end else if(rx_busy) begin
++      if(rx_cnt == 16'd0) begin
++        rx_sr <= { 1'b1, rx_sr[9:1] };
++        rx_cnt <= { serper, 1'b1 };
++        rx_bits <= rx_bits - 4'd1;
++        if(rx_bits == 4'd1) rx_busy <= 1'b0;
++      end else
++        rx_cnt <= rx_cnt - 16'd1;
++    end
++  end
++end
++
++`endif
++
++// bit rate is not reported (0x800001 = "unsupported" as in the MiSTeryNano mfp),
++// the frame format is fixed to 8N1
++wire [23:0] bitrate = 24'h800001;
++assign serial_status = { bitrate[7:0], bitrate[15:8], bitrate[23:16],
++                         4'd8, 2'd0, 2'd0 };
++
++endmodule
+diff -ruN --strip-trailing-cr ./src/nanomig.gprj ./src/nanomig.gprj
+--- a/src/nanomig.gprj	2026-10-13 15:37:44.000000000 +0000
++++ b/src/nanomig.gprj	2026-10-13 22:08:03.565603049 +0000
+@@ -82,7 +82,9 @@
+         <File path="misc/sd_rw.v" type="file.verilog" enable="1"/>
+         <File path="misc/sdcmd_ctrl.v" type="file.verilog" enable="1"/>
+         <File path="misc/sdram.sv" type="file.verilog" enable="1"/>
++        <File path="misc/io_fifo.v" type="file.verilog" enable="1"/>
+         <File path="misc/sysctrl.v" type="file.verilog" enable="1"/>
++        <File path="misc/uart_port.v" type="file.verilog" enable="1"/>
+         <File path="misc/video_analyzer.v" type="file.verilog" enable="1"/>
+         <File path="misc/ws2812.v" type="file.verilog" enable="1"/>
+         <File path="nanomig.v" type="file.verilog" enable="1"/>
+diff -ruN --strip-trailing-cr ./src/nanomig.v ./src/nanomig.v
+--- a/src/nanomig.v	2026-10-13 15:37:44.000000000 +0000
++++ b/src/nanomig.v	2026-10-15 20:55:34.338317647 +0000
+@@ -55,6 +55,19 @@
+    output	 uart_tx,
+    input	 uart_rx,
+ 
++`ifdef ENABLE_AT_MODEM
++   // serial port as byte stream to/from the MCU (virtual AT modem of the
++   // FPGA Companion). Replaces the uart_rx pin unless serial_midi is set.
++   input	 serial_midi,	// 0 = AT modem, 1 = pins/midi
++   output [31:0] serial_status,
++   output [7:0]  serial_tx_available,
++   input	 serial_tx_strobe,
++   output [7:0]  serial_tx_data,
++   output [7:0]  serial_rx_available,
++   input	 serial_rx_strobe,
++   input [7:0]	 serial_rx_data,
++`endif
++
+ `ifdef ENABLE_RTC
+    // RTC time information as e.g. received via NTP
+    input [11:0]	 rtc,
+@@ -1442,6 +1455,38 @@
+ wire [15:0] ramdata_in_ext = ramdata_in;
+ `endif
+ 
++`ifdef ENABLE_AT_MODEM
++// bridge between the serial port of paula and the virtual AT modem in the
++// FPGA Companion (byte stream via sysctrl port commands)
++wire [14:0] at_serper;
++wire        at_rbf;
++wire [7:0]  at_tx_byte;
++wire        at_tx_push;
++wire        at_hold;
++wire        at_rxd;
++
++uart_port uart_port (
++  .clk                 ( clk_sys ),
++  .clk7_en             ( clk7_en ),
++  .reset               ( reset_d || serial_midi ), // fifos are flushed and idle in pin/midi mode
++
++  .serper              ( at_serper ),
++  .rbf                 ( at_rbf ),
++  .tx_byte             ( at_tx_byte ),
++  .tx_push             ( at_tx_push ),
++  .rxd                 ( at_rxd ),
++  .hold                ( at_hold ),
++
++  .serial_status       ( serial_status ),
++  .serial_tx_available ( serial_tx_available ),
++  .serial_tx_strobe    ( serial_tx_strobe ),
++  .serial_tx_data      ( serial_tx_data ),
++  .serial_rx_available ( serial_rx_available ),
++  .serial_rx_strobe    ( serial_rx_strobe ),
++  .serial_rx_data      ( serial_rx_data )
++);
++`endif
++
+ minimig minimig
+ (
+ 	//m68k pins
+@@ -1490,8 +1535,18 @@
+         .ovl          (ovl              ),   
+ 
+ 	//rs232 pins
++`ifdef ENABLE_AT_MODEM
++	.rxd          (serial_midi ? uart_rx : at_rxd), // RS232 receive (pin or AT modem bridge)
++	.txd          (uart_tx          ), // RS232 send
++	.uart_serper  (at_serper        ),
++	.uart_rbf     (at_rbf           ),
++	.uart_tx_byte (at_tx_byte       ),
++	.uart_tx_push (at_tx_push       ),
++	.uart_hold    (at_hold          ),
++`else
+ 	.rxd          (uart_rx          ), // RS232 receive
+ 	.txd          (uart_tx          ), // RS232 send
++`endif
+ 	.cts          (1'b0             ), // RS232 clear to send (0=ready to receive)
+ 	.rts          (                 ), // RS232 request to send
+ 	.dtr          (                 ), // RS232 Data Terminal Ready
+diff -ruN --strip-trailing-cr ./src/nanomig_020.gprj ./src/nanomig_020.gprj
+--- a/src/nanomig_020.gprj	2026-10-13 15:37:44.000000000 +0000
++++ b/src/nanomig_020.gprj	2026-10-13 22:08:03.565458157 +0000
+@@ -87,7 +87,9 @@
+         <File path="misc/sd_rw.v" type="file.verilog" enable="1"/>
+         <File path="misc/sdcmd_ctrl.v" type="file.verilog" enable="1"/>
+         <File path="misc/sdram.sv" type="file.verilog" enable="1"/>
++        <File path="misc/io_fifo.v" type="file.verilog" enable="1"/>
+         <File path="misc/sysctrl.v" type="file.verilog" enable="1"/>
++        <File path="misc/uart_port.v" type="file.verilog" enable="1"/>
+         <File path="misc/video_analyzer.v" type="file.verilog" enable="1"/>
+         <File path="misc/ws2812.v" type="file.verilog" enable="1"/>
+         <File path="nanomig.v" type="file.verilog" enable="1"/>
+diff -ruN --strip-trailing-cr ./src/nanomig_lcd.gprj ./src/nanomig_lcd.gprj
+--- a/src/nanomig_lcd.gprj	2026-10-13 15:37:44.000000000 +0000
++++ b/src/nanomig_lcd.gprj	2026-10-13 22:08:03.565232717 +0000
+@@ -84,7 +84,9 @@
+         <File path="misc/sd_rw.v" type="file.verilog" enable="1"/>
+         <File path="misc/sdcmd_ctrl.v" type="file.verilog" enable="1"/>
+         <File path="misc/sdram.sv" type="file.verilog" enable="1"/>
++        <File path="misc/io_fifo.v" type="file.verilog" enable="1"/>
+         <File path="misc/sysctrl.v" type="file.verilog" enable="1"/>
++        <File path="misc/uart_port.v" type="file.verilog" enable="1"/>
+         <File path="misc/video_analyzer.v" type="file.verilog" enable="1"/>
+         <File path="misc/ws2812.v" type="file.verilog" enable="1"/>
+         <File path="nanomig.v" type="file.verilog" enable="1"/>
+diff -ruN --strip-trailing-cr ./src/nanomig_mistle_gw3a_20.gprj ./src/nanomig_mistle_gw3a_20.gprj
+--- a/src/nanomig_mistle_gw3a_20.gprj	2026-10-13 15:37:44.000000000 +0000
++++ b/src/nanomig_mistle_gw3a_20.gprj	2026-10-13 22:08:03.564957360 +0000
+@@ -78,7 +78,9 @@
+         <File path="misc/sd_rw.v" type="file.verilog" enable="1"/>
+         <File path="misc/sdcmd_ctrl.v" type="file.verilog" enable="1"/>
+         <File path="misc/sdram.sv" type="file.verilog" enable="1"/>
++        <File path="misc/io_fifo.v" type="file.verilog" enable="1"/>
+         <File path="misc/sysctrl.v" type="file.verilog" enable="1"/>
++        <File path="misc/uart_port.v" type="file.verilog" enable="1"/>
+         <File path="misc/video_analyzer.v" type="file.verilog" enable="1"/>
+         <File path="misc/ws2812.v" type="file.verilog" enable="1"/>
+         <File path="mistle/gw3a_20/gowin_dp/ide_dpram.v" type="file.verilog" enable="1"/>
+diff -ruN --strip-trailing-cr ./src/nanomig_tc138k.gprj ./src/nanomig_tc138k.gprj
+--- a/src/nanomig_tc138k.gprj	2026-10-13 15:37:44.000000000 +0000
++++ b/src/nanomig_tc138k.gprj	2026-10-13 22:08:03.566330268 +0000
+@@ -78,7 +78,9 @@
+         <File path="misc/sd_rw.v" type="file.verilog" enable="1"/>
+         <File path="misc/sdcmd_ctrl.v" type="file.verilog" enable="1"/>
+         <File path="misc/sdram.sv" type="file.verilog" enable="1"/>
++        <File path="misc/io_fifo.v" type="file.verilog" enable="1"/>
+         <File path="misc/sysctrl.v" type="file.verilog" enable="1"/>
++        <File path="misc/uart_port.v" type="file.verilog" enable="1"/>
+         <File path="misc/video_analyzer.v" type="file.verilog" enable="1"/>
+         <File path="misc/ws2812.v" type="file.verilog" enable="1"/>
+         <File path="nanomig.v" type="file.verilog" enable="1"/>
+diff -ruN --strip-trailing-cr ./src/nanomig_tc60k.gprj ./src/nanomig_tc60k.gprj
+--- a/src/nanomig_tc60k.gprj	2026-10-13 15:37:44.000000000 +0000
++++ b/src/nanomig_tc60k.gprj	2026-10-13 22:08:03.564704085 +0000
+@@ -76,7 +76,9 @@
+         <File path="misc/sd_card.v" type="file.verilog" enable="1"/>
+         <File path="misc/sd_rw.v" type="file.verilog" enable="1"/>
+         <File path="misc/sdcmd_ctrl.v" type="file.verilog" enable="1"/>
++        <File path="misc/io_fifo.v" type="file.verilog" enable="1"/>
+         <File path="misc/sysctrl.v" type="file.verilog" enable="1"/>
++        <File path="misc/uart_port.v" type="file.verilog" enable="1"/>
+         <File path="misc/video_analyzer.v" type="file.verilog" enable="1"/>
+         <File path="misc/ws2812.v" type="file.verilog" enable="1"/>
+         <File path="nanomig.v" type="file.verilog" enable="1"/>
+diff -ruN --strip-trailing-cr ./src/nanomig_tm138kpro.gprj ./src/nanomig_tm138kpro.gprj
+--- a/src/nanomig_tm138kpro.gprj	2026-10-13 15:37:44.000000000 +0000
++++ b/src/nanomig_tm138kpro.gprj	2026-10-13 22:08:03.565889634 +0000
+@@ -76,7 +76,9 @@
+         <File path="misc/sd_card.v" type="file.verilog" enable="1"/>
+         <File path="misc/sd_rw.v" type="file.verilog" enable="1"/>
+         <File path="misc/sdcmd_ctrl.v" type="file.verilog" enable="1"/>
++        <File path="misc/io_fifo.v" type="file.verilog" enable="1"/>
+         <File path="misc/sysctrl.v" type="file.verilog" enable="1"/>
++        <File path="misc/uart_port.v" type="file.verilog" enable="1"/>
+         <File path="misc/video_analyzer.v" type="file.verilog" enable="1"/>
+         <File path="misc/ws2812.v" type="file.verilog" enable="1"/>
+         <File path="nanomig.v" type="file.verilog" enable="1"/>
+diff -ruN --strip-trailing-cr ./src/nanomig_tp25k.gprj ./src/nanomig_tp25k.gprj
+--- a/src/nanomig_tp25k.gprj	2026-10-13 15:37:44.000000000 +0000
++++ b/src/nanomig_tp25k.gprj	2026-10-13 22:08:03.566105838 +0000
+@@ -75,7 +75,9 @@
+         <File path="misc/sd_card.v" type="file.verilog" enable="1"/>
+         <File path="misc/sd_rw.v" type="file.verilog" enable="1"/>
+         <File path="misc/sdcmd_ctrl.v" type="file.verilog" enable="1"/>
++        <File path="misc/io_fifo.v" type="file.verilog" enable="1"/>
+         <File path="misc/sysctrl.v" type="file.verilog" enable="1"/>
++        <File path="misc/uart_port.v" type="file.verilog" enable="1"/>
+         <File path="misc/video_analyzer.v" type="file.verilog" enable="1"/>
+         <File path="misc/ws2812.v" type="file.verilog" enable="1"/>
+ 	<File path="misc/amiga_keymap.v" type="file.verilog" enable="1"/>
+diff -ruN --strip-trailing-cr ./src/tang/nano20k/top.sv ./src/tang/nano20k/top.sv
+--- a/src/tang/nano20k/top.sv	2026-10-13 15:37:44.000000000 +0000
++++ b/src/tang/nano20k/top.sv	2026-10-15 20:55:34.339358486 +0000
+@@ -20,6 +20,7 @@
+ // `define NO_WS2812   // drop the rgb status led to make room for cache + ide
+ // `define DENISE_EBR   // block ram based bitplane and sprite buffers, saves logic
+ `define DISABLE_ROM_LOADER // drop the rom loader to make room 
++`define ENABLE_AT_MODEM // serial port <-> virtual AT modem of the FPGA Companion (replaces the midi_in pin)
+ // `define ENABLE_DRIVE_SOUNDS
+ 
+ module top(
+@@ -174,6 +175,9 @@
+ wire       osd_stereo_mix;      // 0=off, 1=on
+ wire [1:0] osd_kickstart;       // 1=1.3, 2=3.1, 3=3.2
+ wire 	   osd_drive_sounds;   	// 0 = disabled, 1 = enabled
++`ifdef ENABLE_AT_MODEM
++wire       osd_serial_midi;    // 0 = AT modem, 1 = pins/midi
++`endif
+ 
+ wire	   rom_download_in_progress;
+ 
+@@ -483,6 +487,17 @@
+         .joystick1(hid_joy1)
+          );   
+ 
++`ifdef ENABLE_AT_MODEM
++// serial port <-> FPGA Companion (virtual AT modem)
++wire [31:0] serial_status;
++wire [7:0]  serial_tx_available;
++wire        serial_tx_strobe;
++wire [7:0]  serial_tx_data;
++wire [7:0]  serial_rx_available;
++wire        serial_rx_strobe;
++wire [7:0]  serial_rx_data;
++`endif
++
+ sysctrl #(
+ `ifdef ENABLE_AGA
+         .AGA(1)
+@@ -518,11 +533,25 @@
+ 	.system_stereo_mix(osd_stereo_mix),
+   	.system_kickstart(osd_kickstart),
+ 	.system_drive_sounds(osd_drive_sounds),
++`ifdef ENABLE_AT_MODEM
++	.system_serial_midi(osd_serial_midi),
++`endif
+ 
+         .int_out_n(spi_intn),
+         .int_in( { 4'b0000, sdc_int, 1'b0, hid_int, 1'b0 }),
+         .int_ack( int_ack ),
+ 
++`ifdef ENABLE_AT_MODEM
++        // port io (used to expose the serial port)
++        .port_status(serial_status),
++        .port_out_available(serial_tx_available),
++        .port_out_strobe(serial_tx_strobe),
++        .port_out_data(serial_tx_data),
++        .port_in_available(serial_rx_available),
++        .port_in_strobe(serial_rx_strobe),
++        .port_in_data(serial_rx_data),
++`endif
++
+         .buttons( {user, reset} ),
+         .leds(),
+         .color(ws2812_color)
+@@ -682,6 +711,16 @@
+  // uart interface 
+  .uart_rx(midi_in),
+  .uart_tx(midi_out),
++`ifdef ENABLE_AT_MODEM
++ .serial_midi(osd_serial_midi),
++ .serial_status(serial_status),
++ .serial_tx_available(serial_tx_available),
++ .serial_tx_strobe(serial_tx_strobe),
++ .serial_tx_data(serial_tx_data),
++ .serial_rx_available(serial_rx_available),
++ .serial_rx_strobe(serial_rx_strobe),
++ .serial_rx_data(serial_rx_data),
++`endif
+  
+  // keyboard & mouse				 
+  .mouse_buttons(mouse_buttons), // mouse buttons
+diff -ruN --strip-trailing-cr ./src/tang/nano20k/top_020.sv ./src/tang/nano20k/top_020.sv
+--- a/src/tang/nano20k/top_020.sv	2026-10-13 15:37:44.000000000 +0000
++++ b/src/tang/nano20k/top_020.sv	2026-10-16 06:53:23.767352274 +0000
+@@ -20,6 +20,8 @@
+ // `define NO_WS2812   // drop the rgb status led to make room for cache + ide
+ `define DENISE_EBR   // block ram based bitplane and sprite buffers, saves logic
+ `define DISABLE_ROM_LOADER // drop the rom loader to make room 
++`define ENABLE_AT_MODEM // serial port <-> virtual AT modem of the FPGA Companion (replaces the midi_in pin)
++`define AT_MODEM_LITE // small AT modem bridge (one byte buffers instead of fifos) to make the core fit
+ // `define ENABLE_DRIVE_SOUNDS
+ 
+ module top(
+@@ -174,6 +176,9 @@
+ wire       osd_stereo_mix;      // 0=off, 1=on
+ wire [1:0] osd_kickstart;       // 1=1.3, 2=3.1, 3=3.2
+ wire 	   osd_drive_sounds;   	// 0 = disabled, 1 = enabled
++`ifdef ENABLE_AT_MODEM
++wire       osd_serial_midi;    // 0 = AT modem, 1 = pins/midi
++`endif
+ 
+ wire	   rom_download_in_progress;
+ 
+@@ -483,6 +488,17 @@
+         .joystick1(hid_joy1)
+          );   
+ 
++`ifdef ENABLE_AT_MODEM
++// serial port <-> FPGA Companion (virtual AT modem)
++wire [31:0] serial_status;
++wire [7:0]  serial_tx_available;
++wire        serial_tx_strobe;
++wire [7:0]  serial_tx_data;
++wire [7:0]  serial_rx_available;
++wire        serial_rx_strobe;
++wire [7:0]  serial_rx_data;
++`endif
++
+ sysctrl #(
+ `ifdef ENABLE_AGA
+         .AGA(1)
+@@ -518,11 +534,25 @@
+ 	.system_stereo_mix(osd_stereo_mix),
+   	.system_kickstart(osd_kickstart),
+ 	.system_drive_sounds(osd_drive_sounds),
++`ifdef ENABLE_AT_MODEM
++	.system_serial_midi(osd_serial_midi),
++`endif
+ 
+         .int_out_n(spi_intn),
+         .int_in( { 4'b0000, sdc_int, 1'b0, hid_int, 1'b0 }),
+         .int_ack( int_ack ),
+ 
++`ifdef ENABLE_AT_MODEM
++        // port io (used to expose the serial port)
++        .port_status(serial_status),
++        .port_out_available(serial_tx_available),
++        .port_out_strobe(serial_tx_strobe),
++        .port_out_data(serial_tx_data),
++        .port_in_available(serial_rx_available),
++        .port_in_strobe(serial_rx_strobe),
++        .port_in_data(serial_rx_data),
++`endif
++
+         .buttons( {user, reset} ),
+         .leds(),
+         .color(ws2812_color)
+@@ -682,6 +712,16 @@
+  // uart interface 
+  .uart_rx(midi_in),
+  .uart_tx(midi_out),
++`ifdef ENABLE_AT_MODEM
++ .serial_midi(osd_serial_midi),
++ .serial_status(serial_status),
++ .serial_tx_available(serial_tx_available),
++ .serial_tx_strobe(serial_tx_strobe),
++ .serial_tx_data(serial_tx_data),
++ .serial_rx_available(serial_rx_available),
++ .serial_rx_strobe(serial_rx_strobe),
++ .serial_rx_data(serial_rx_data),
++`endif
+  
+  // keyboard & mouse				 
+  .mouse_buttons(mouse_buttons), // mouse buttons

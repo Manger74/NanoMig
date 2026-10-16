@@ -20,6 +20,7 @@
 // `define NO_WS2812   // drop the rgb status led to make room for cache + ide
 // `define DENISE_EBR   // block ram based bitplane and sprite buffers, saves logic
 `define DISABLE_ROM_LOADER // drop the rom loader to make room 
+`define ENABLE_AT_MODEM // serial port <-> virtual AT modem of the FPGA Companion (replaces the midi_in pin)
 // `define ENABLE_DRIVE_SOUNDS
 
 module top(
@@ -174,6 +175,9 @@ wire [2:0] osd_volume;          // Mute=0, 1=25%, 2=50%, 3=75%, 4=100%
 wire       osd_stereo_mix;      // 0=off, 1=on
 wire [1:0] osd_kickstart;       // 1=1.3, 2=3.1, 3=3.2
 wire 	   osd_drive_sounds;   	// 0 = disabled, 1 = enabled
+`ifdef ENABLE_AT_MODEM
+wire       osd_serial_midi;    // 0 = AT modem, 1 = pins/midi
+`endif
 
 wire	   rom_download_in_progress;
 
@@ -483,6 +487,17 @@ hid hid (
         .joystick1(hid_joy1)
          );   
 
+`ifdef ENABLE_AT_MODEM
+// serial port <-> FPGA Companion (virtual AT modem)
+wire [31:0] serial_status;
+wire [7:0]  serial_tx_available;
+wire        serial_tx_strobe;
+wire [7:0]  serial_tx_data;
+wire [7:0]  serial_rx_available;
+wire        serial_rx_strobe;
+wire [7:0]  serial_rx_data;
+`endif
+
 sysctrl #(
 `ifdef ENABLE_AGA
         .AGA(1)
@@ -518,10 +533,24 @@ sysctrl #(
 	.system_stereo_mix(osd_stereo_mix),
   	.system_kickstart(osd_kickstart),
 	.system_drive_sounds(osd_drive_sounds),
+`ifdef ENABLE_AT_MODEM
+	.system_serial_midi(osd_serial_midi),
+`endif
 
         .int_out_n(spi_intn),
         .int_in( { 4'b0000, sdc_int, 1'b0, hid_int, 1'b0 }),
         .int_ack( int_ack ),
+
+`ifdef ENABLE_AT_MODEM
+        // port io (used to expose the serial port)
+        .port_status(serial_status),
+        .port_out_available(serial_tx_available),
+        .port_out_strobe(serial_tx_strobe),
+        .port_out_data(serial_tx_data),
+        .port_in_available(serial_rx_available),
+        .port_in_strobe(serial_rx_strobe),
+        .port_in_data(serial_rx_data),
+`endif
 
         .buttons( {user, reset} ),
         .leds(),
@@ -682,6 +711,16 @@ nanomig nanomig
  // uart interface 
  .uart_rx(midi_in),
  .uart_tx(midi_out),
+`ifdef ENABLE_AT_MODEM
+ .serial_midi(osd_serial_midi),
+ .serial_status(serial_status),
+ .serial_tx_available(serial_tx_available),
+ .serial_tx_strobe(serial_tx_strobe),
+ .serial_tx_data(serial_tx_data),
+ .serial_rx_available(serial_rx_available),
+ .serial_rx_strobe(serial_rx_strobe),
+ .serial_rx_data(serial_rx_data),
+`endif
  
  // keyboard & mouse				 
  .mouse_buttons(mouse_buttons), // mouse buttons

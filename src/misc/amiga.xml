@@ -106,6 +106,12 @@
 	<listentry label="Off" value="0"/>
 	<listentry label="On" value="1"/>
       </list>
+      <!--IS tang_nano20k tang_nano20k_020 tang_nano20k_lcd -->
+      <list label="Serial:" id="O" default="0">
+	<listentry label="Modem" value="0"/>
+	<listentry label="Midi" value="1"/>
+      </list>
+      <!--END-->
       <!--IS ENABLE_ROM_LOADER -->
       <image label="Kickstart" index="0" none_str="&lt;flash&gt;" none_icn="003c7e3c7e3c7e3c" ext="rom" default="kick.rom" action="reset_hide"/>
       <!--END-->

@@ -14,6 +14,13 @@ module paula_uart (
   output wire           rxint,
   output wire           txd,
   input  wire           rxd
+`ifdef ENABLE_AT_MODEM
+  ,
+  output wire [ 15-1:0] serper_o, // baud rate setting for the AT modem bridge
+  output wire [  8-1:0] tx_byte_o,// byte being sent, valid while tx_push_o
+  output wire           tx_push_o,// one clk pulse when a frame is started
+  input  wire           tx_hold   // bridge fifo full: don't start another frame
+`endif
 );
 
 
@@ -30,6 +37,11 @@ localparam RBF_BIT   = 14-11;
 localparam TBE_BIT   = 13-11;
 localparam TSRE_BIT  = 12-11;
 localparam RXD_BIT   = 11-11;
+
+
+`ifndef ENABLE_AT_MODEM
+wire           tx_hold = 1'b0;
+`endif
 
 
 //// RX input sync ////
@@ -88,7 +100,7 @@ always @ (posedge clk) begin
           // txd pin inactive in idle state
           tx_txd <= #1 1'b1;
           // check if new data loaded to serdat register
-          if (!tx_tbe) begin
+          if (!tx_tbe && !tx_hold) begin
             // set interrupt request
             tx_irq <= #1 1'b1;
             // data buffer empty again
@@ -136,7 +148,7 @@ always @ (posedge clk) begin
       if (uartbrk) tx_txd <= #1 1'b0;
       // handle tbe bit
       //if (rga_i == REG_SERDAT[8:1]) tx_tbe <= #1 1'b0;
-      tx_tbe <= #1 (rga_i == REG_SERDAT[8:1]) ? 1'b0 : ((tx_state == TX_IDLE) ? 1'b1 : tx_tbe);
+      tx_tbe <= #1 (rga_i == REG_SERDAT[8:1]) ? 1'b0 : ((tx_state == TX_IDLE && !tx_hold) ? 1'b1 : tx_tbe);
     end
   end
 end
@@ -253,6 +265,18 @@ assign rxint = rx_irq;
 
 // uart output
 assign txd   = tx_txd;
+
+`ifdef ENABLE_AT_MODEM
+assign serper_o = serper[14:0];
+
+// hand every byte over to the AT modem bridge when its frame is started
+// (same condition as the load of tx_shift above)
+reg tx_push;
+always @ (posedge clk)
+  tx_push <= clk7_en && !reset && tx_state == TX_IDLE && !tx_tbe && !tx_hold;
+assign tx_byte_o = serdat[7:0];
+assign tx_push_o = tx_push;
+`endif
 
 // reg bus output
 assign data_o = (rga_i == REG_SERDATR[8:1]) ? {serdatr, 1'b0, rx_data} : 16'h0000;

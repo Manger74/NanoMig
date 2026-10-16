@@ -70,6 +70,13 @@ module paula
 	//serial (uart) 
 	output        txd,					//serial port transmitted data
 	input         rxd,			  		//serial port received data
+`ifdef ENABLE_AT_MODEM
+	output [14:0] uart_serper,	//uart baud rate setting
+	output        uart_rbf,		//uart receive buffer full
+	output [7:0]  uart_tx_byte,	//byte the uart starts to send
+	output        uart_tx_push,	//uart_tx_byte is valid
+	input         uart_hold,		//hold uart transmitter
+`endif
 	//interrupts and dma
 	input         ntsc,         // PAL/NTSC mode
 	input         sof,          // start of vertical frame
@@ -214,7 +221,18 @@ paula_uart pu1
 	.txint(txint),
 	.rxd(rxd),
 	.txd(txd)
+`ifdef ENABLE_AT_MODEM
+	,
+	.serper_o(uart_serper),
+	.tx_byte_o(uart_tx_byte),
+	.tx_push_o(uart_tx_push),
+	.tx_hold(uart_hold)
+`endif
 );
+
+`ifdef ENABLE_AT_MODEM
+assign uart_rbf = rbfmirror;
+`endif
 
 //instantiate interrupt controller
 paula_intcontroller pi1
