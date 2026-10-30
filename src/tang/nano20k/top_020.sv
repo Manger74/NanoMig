@@ -504,7 +504,7 @@ hid hid (
         .kbd_mouse_type(kbd_mouse_type),
         .kbd_mouse_data(kbd_mouse_data),
         .keyboard_ack(keyboard_ack),
-        .vsync_n(vs_n),
+        //.vsync_n(vs_n),
 
         .kbd_reset(kbd_reset),
         .joystick0(hid_joy0),
