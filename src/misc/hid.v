@@ -61,7 +61,7 @@ wire mouse_event = data_in_strobe && !data_in_start &&
 
 // wire keyboard_timeout = keyboard_aged && keyboard_vsync_d[1] && !keyboard_vsync_d[0];
 
-wire keyboard_pop = (keyboard_ack || keyboard_timeout) && keyboard_busy;
+wire keyboard_pop = keyboard_ack && keyboard_busy;
 
 wire keyboard_push = data_in_strobe && !data_in_start &&
                      command == 8'd1 && state == 4'd0 &&
