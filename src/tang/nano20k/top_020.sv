@@ -560,7 +560,7 @@ sysctrl #(
 
         .int_out_n(spi_intn),
 `ifdef ENABLE_PLIP
-        .int_in( { 3'b000, net_int, sdc_int, 1'b0, hid_int, 1'b0 }),
+        .int_in( { 2'b00, net_int, 1'b0, sdc_int, 1'b0, hid_int, 1'b0 }),
 `else
         .int_in( { 4'b0000, sdc_int, 1'b0, hid_int, 1'b0 }),
 `endif
@@ -753,7 +753,7 @@ nanomig nanomig
  .net_din(mcu_data_out),
  .net_dout(net_data_out),
  .net_irq(net_int),
- .net_iack(int_ack[4]),
+ .net_iack(int_ack[5]),
 `endif
  
  // keyboard & mouse				 
