@@ -20,3 +20,7 @@ iverilog -g2012 -o $O/host.vvp tb_plip_host.v $S/misc/plip_host.v $S/minimig-aga
 echo "== real mcu_spi.v at bit level (19.2 MHz) + plip_host + plip_peer, 100 ns between bytes"
 sed 's/integer sp_gap = 0;/integer sp_gap = 100;/' tb_spi_net.v > $O/tb_spi_net.v
 iverilog -g2012 -DENABLE_PLIP -o $O/spi.vvp $O/tb_spi_net.v $S/misc/mcu_spi.v $S/misc/plip_host.v $S/minimig-aga/plip_peer.v && vvp -n $O/spi.vvp | tail -2
+
+echo "== PLIP_LITE (no statistics, no loopback): host-mediated tests only"
+iverilog -g2012 -DPLIP_LITE -o $O/host_lite.vvp tb_plip_host.v $S/misc/plip_host.v $S/minimig-aga/plip_peer.v && vvp -n $O/host_lite.vvp | tail -2
+iverilog -g2012 -DENABLE_PLIP -DPLIP_LITE -o $O/spi_lite.vvp $O/tb_spi_net.v $S/misc/mcu_spi.v $S/misc/plip_host.v $S/minimig-aga/plip_peer.v && vvp -n $O/spi_lite.vvp | tail -2

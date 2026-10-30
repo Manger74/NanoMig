@@ -89,16 +89,25 @@ module plip_peer #(
     reg  [11:0] cnt;
     reg  [10:0] wr_addr, rd_addr;
     reg  [1:0]  bsel;
+`ifndef PLIP_LITE
     reg  [7:0]  et_hi, et_lo;
+`endif
     reg         done_ok;           // WSEL0 wurde regulaer erreicht
     reg         pulsed;
     reg  [6:0]  pcnt;
     reg  [REPULSE_BITS-1:0] rcnt;
+`ifdef PLIP_LITE
+    // PLIP_LITE: ohne Statistik und ohne Loopback-Test (spart Logik im GW2AR-18)
+    assign stat_rx = 32'd0;
+    assign stat_tx = 32'd0;
+    assign rt_clks = 32'd0;
+`else
     reg  [15:0] c_rx, c_tx;        // Zaehler klein gehalten: Platz im GW2AR-18
     reg  [19:0] since, rt;
     assign stat_rx = {16'd0, c_rx};
     assign stat_tx = {16'd0, c_tx};
     assign rt_clks = {12'd0, rt};
+`endif
 
     // Puffer
     reg  [7:0]  mem_rx [0:2047];
@@ -107,10 +116,14 @@ module plip_peer #(
     reg         rx_we;
     reg  [10:0] rx_wa;
     reg  [7:0]  rx_wd;
+`ifdef PLIP_LITE
+    wire [10:0] rx_ra = h_raddr;
+`else
     reg         cp_we;
     reg  [10:0] cp_a, cp_wa;
     reg         cp_ph;
     wire [10:0] rx_ra = (st == COPY) ? cp_a : h_raddr;
+`endif
 
     integer i;
     initial begin
@@ -126,8 +139,12 @@ module plip_peer #(
     end
 
     always @(posedge clk) begin
+`ifdef PLIP_LITE
+        if (h_we) mem_tx[h_waddr] <= h_wdata;
+`else
         if (cp_we)     mem_tx[cp_wa] <= rxq;
         else if (h_we) mem_tx[h_waddr] <= h_wdata;
+`endif
         txq <= mem_tx[rd_addr];
     end
 
@@ -140,15 +157,22 @@ module plip_peer #(
 
     // ---------------------------------------------------------------- Automat
     always @(posedge clk) begin
+`ifndef PLIP_LITE
         if (~&since) since <= since + 20'd1;
+`endif
         rx_we   <= 1'b0;
+`ifndef PLIP_LITE
         cp_we   <= 1'b0;
+`endif
 
         if (rst) begin
             st <= IDLE; rak <= 1'b0; bus_oe <= 1'b0; bsel <= 2'd0;
             rx_valid <= 1'b0; tx_valid <= 1'b0; rx_len <= 11'd0; tx_len <= 11'd0;
             flag_n <= 1'b1; pulsed <= 1'b0; pcnt <= 7'd0; rcnt <= {REPULSE_BITS{1'b0}};
-            c_rx <= 16'd0; c_tx <= 16'd0; rt <= 20'd0; since <= 20'd0; done_ok <= 1'b0;
+`ifndef PLIP_LITE
+            c_rx <= 16'd0; c_tx <= 16'd0; rt <= 20'd0; since <= 20'd0;
+`endif
+            done_ok <= 1'b0;
             rd_addr <= 11'd0; wr_addr <= 11'd0; cnt <= 12'd0; size <= 16'd0;
         end else begin
             // ----- Host
@@ -184,7 +208,9 @@ module plip_peer #(
                         end else if (prb_o == 8'h44) begin
                             size    <= tx_valid ? {5'd0, tx_len} : 16'd0;
                             rd_addr <= 11'd0;
+`ifndef PLIP_LITE
                             rt <= since; since <= 20'd0;
+`endif
                             rak <= 1'b1; st <= RB_1;
                         end
                     end
@@ -205,8 +231,10 @@ module plip_peer #(
                 end
                 SB_BURST: if (req_edge) begin
                     rx_we <= 1'b1; rx_wa <= wr_addr; rx_wd <= prb_o;
+`ifndef PLIP_LITE
                     if (wr_addr == 11'd12) et_hi <= prb_o;
                     if (wr_addr == 11'd13) et_lo <= prb_o;
+`endif
                     wr_addr <= wr_addr + 11'd1;
                     cnt     <= cnt + 12'd1;
                     if (cnt + 12'd1 == tot) st <= SB_X1;
@@ -241,20 +269,27 @@ module plip_peer #(
                     rak <= 1'b0; bus_oe <= 1'b0; bsel <= 2'd0;
                     done_ok <= 1'b0;
                     if (done_ok && cmd == 8'h33) begin
+`ifndef PLIP_LITE
                         c_rx <= c_rx + 16'd1;
                         if (loop_en && et_hi == 8'hFF && et_lo == 8'hFD && !tx_valid) begin
                             cnt <= 12'd0; cp_ph <= 1'b0; cp_a <= 11'd0; st <= COPY;
-                        end else begin
+                        end else
+`endif
+                        begin
                             rx_len <= size[10:0]; rx_valid <= 1'b1; st <= IDLE;
                         end
                     end else begin
                         if (done_ok && cmd == 8'h44 && size != 16'd0) begin   // Rahmen wurde geliefert
-                            tx_valid <= 1'b0; pulsed <= 1'b0; c_tx <= c_tx + 16'd1;
+                            tx_valid <= 1'b0; pulsed <= 1'b0;
+`ifndef PLIP_LITE
+                            c_tx <= c_tx + 16'd1;
+`endif
                         end
                         st <= IDLE;
                     end
                 end
 
+`ifndef PLIP_LITE
                 // ---- Loopback-Test: rx -> tx kopieren (2 Takte je Byte)
                 COPY: begin
                     if (!cp_ph) begin
@@ -267,6 +302,7 @@ module plip_peer #(
                         end else cp_a <= cp_a + 11'd1;
                     end
                 end
+`endif
                 default: st <= IDLE;
                 endcase
             end

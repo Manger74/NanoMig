@@ -358,6 +358,11 @@ module tb_spi_net;
         for (i = 0; i < 40; i = i + 1) if (rcv[i] !== ref_[i]) errors = errors + 1;
         do_iack;
 
+`ifdef PLIP_LITE
+        $display("H5/H6 entfallen (PLIP_LITE): keine Statistik, kein Loopback");
+        spi_stats;
+        if (sstats !== 96'd0) fail("STATS bei PLIP_LITE nicht 0");
+`else
         $display("H5 Zaehler");
         spi_stats;
         $display("  stat_rx=%0d stat_tx=%0d rt_clks=%0d", sstats[95:64], sstats[63:32], sstats[31:0]);
@@ -375,6 +380,7 @@ module tb_spi_net;
         if (rx_valid) fail("Loopback belastet den Host");
         do_iack;
         spi_config(2'b01);
+`endif
 
         $display("H7 Abschalten");
         spi_config(2'b00); repeat (10) clk1;

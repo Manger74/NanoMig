@@ -58,7 +58,9 @@ reg [11:0] cnt;                    // index of the byte after the command, satur
 reg        rx_valid_d, tx_valid_d;
 
 wire [7:0]  status = { 4'b0000, plip_loop, plip_en, tx_valid, rx_valid };
+`ifndef PLIP_LITE
 wire [95:0] stats  = { stat_rx, stat_tx, rt_clks };
+`endif
 
 always @(posedge clk) begin
   h_we <= 1'b0;
@@ -118,8 +120,12 @@ always @(posedge clk) begin
                 plip_loop <= data_in[1];
               end
 
+`ifdef PLIP_LITE
+        8'd6: data_out <= 8'h00;                 // keine Statistik
+`else
         8'd6: data_out <= (cnt == 12'd0) ? 8'h00 :
                           (cnt <= 12'd12) ? stats[(12 - cnt) * 8 +: 8] : 8'h00;
+`endif
 
         default: data_out <= 8'h00;
       endcase

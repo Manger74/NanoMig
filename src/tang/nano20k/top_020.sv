@@ -21,6 +21,7 @@
 `define DENISE_EBR   // block ram based bitplane and sprite buffers, saves logic
 `define DISABLE_ROM_LOADER // drop the rom loader to make room 
 `define ENABLE_PLIP // virtual parallel port (plipbox.device peer), loopback test only
+`define PLIP_LITE // PLIP without statistics and loopback test, saves logic (FX68K top.sv has room for both)
 // `define ENABLE_AT_MODEM // serial port <-> virtual AT modem of the FPGA Companion (replaces the midi_in pin)
 // `define ENABLE_DRIVE_SOUNDS
 
