@@ -110,9 +110,9 @@ module plip_peer #(
 
     integer i;
     initial begin
-        for (i = 0; i < 2048; i = i + 1) begin
-            mem_rx[i] = 8'h00;
-            mem_tx[i] = 8'h00;
+        for (i = 0; i < 1024; i = i + 1) begin    // Gowin: max. 2000 Schleifendurchlaeufe
+            mem_rx[i] = 8'h00;  mem_rx[i + 1024] = 8'h00;
+            mem_tx[i] = 8'h00;  mem_tx[i + 1024] = 8'h00;
         end
     end
 
