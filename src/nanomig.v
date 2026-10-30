@@ -1549,6 +1549,25 @@ minimig minimig
 	.dsr          (1'b1             ), // RS232 Data Set Ready (1=ready)
 	.cd           (1'b1             ), // RS232 Carrier Detect (1=carrier detected)
 	.ri           (1'b1             ), // RS232 Ring Indicator (1=idle/not ringing)
+`ifdef ENABLE_PLIP
+	// virtual parallel port, first test: loopback of $FFFD frames, no host side yet
+	.plip_en        (1'b1           ),
+	.plip_loop      (1'b1           ),
+	.plip_h_we      (1'b0           ),
+	.plip_h_waddr   (11'd0          ),
+	.plip_h_wdata   (8'd0           ),
+	.plip_h_commit  (1'b0           ),
+	.plip_h_len     (11'd0          ),
+	.plip_tx_valid  (               ),
+	.plip_h_raddr   (11'd0          ),
+	.plip_h_rdata   (               ),
+	.plip_rx_valid  (               ),
+	.plip_rx_len    (               ),
+	.plip_h_release (1'b0           ),
+	.plip_stat_rx   (               ),
+	.plip_stat_tx   (               ),
+	.plip_rt_clks   (               ),
+`endif
 
 	//I/O
 	._joy1        (~JOY0            ), // joystick 1 [fire4,fire3,fire2,fire,up,down,left,right] (default mouse port)

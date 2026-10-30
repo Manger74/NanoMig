@@ -11,6 +11,7 @@ add_file minimig-aga/cpu_wrapper.v
 add_file minimig-aga/minimig.v 
 add_file minimig-aga/ciaa.v
 add_file minimig-aga/ciab.v
+add_file minimig-aga/plip_peer.v
 add_file minimig-aga/cia_int.v
 add_file minimig-aga/cia_timera.v
 add_file minimig-aga/cia_timerb.v
