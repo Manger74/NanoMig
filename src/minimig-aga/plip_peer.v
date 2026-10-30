@@ -51,9 +51,9 @@ module plip_peer #(
 
     // Test und Status
     input  wire        loop_en,      // Rahmen mit Ethertype $FFFD gehen ohne Host zurueck
-    output reg  [31:0] stat_rx,
-    output reg  [31:0] stat_tx,
-    output reg  [31:0] rt_clks       // Takte zwischen den letzten zwei RECV-Befehlen
+    output wire [31:0] stat_rx,      // Rahmen vom Amiga (16 Bit, laeuft ueber)
+    output wire [31:0] stat_tx,      // Rahmen zum Amiga (16 Bit, laeuft ueber)
+    output wire [31:0] rt_clks       // Takte zwischen den letzten zwei RECV-Befehlen (20 Bit, saettigt)
 );
 
     // ---------------------------------------------------------------- Eingaenge
@@ -94,7 +94,11 @@ module plip_peer #(
     reg         pulsed;
     reg  [6:0]  pcnt;
     reg  [REPULSE_BITS-1:0] rcnt;
-    reg  [31:0] clk_cnt, last_recv;
+    reg  [15:0] c_rx, c_tx;        // Zaehler klein gehalten: Platz im GW2AR-18
+    reg  [19:0] since, rt;
+    assign stat_rx = {16'd0, c_rx};
+    assign stat_tx = {16'd0, c_tx};
+    assign rt_clks = {12'd0, rt};
 
     // Puffer
     reg  [7:0]  mem_rx [0:2047];
@@ -136,7 +140,7 @@ module plip_peer #(
 
     // ---------------------------------------------------------------- Automat
     always @(posedge clk) begin
-        clk_cnt <= clk_cnt + 32'd1;
+        if (~&since) since <= since + 20'd1;
         rx_we   <= 1'b0;
         cp_we   <= 1'b0;
 
@@ -144,8 +148,7 @@ module plip_peer #(
             st <= IDLE; rak <= 1'b0; bus_oe <= 1'b0; bsel <= 2'd0;
             rx_valid <= 1'b0; tx_valid <= 1'b0; rx_len <= 11'd0; tx_len <= 11'd0;
             flag_n <= 1'b1; pulsed <= 1'b0; pcnt <= 7'd0; rcnt <= {REPULSE_BITS{1'b0}};
-            stat_rx <= 32'd0; stat_tx <= 32'd0; rt_clks <= 32'd0;
-            clk_cnt <= 32'd0; last_recv <= 32'd0; done_ok <= 1'b0;
+            c_rx <= 16'd0; c_tx <= 16'd0; rt <= 20'd0; since <= 20'd0; done_ok <= 1'b0;
             rd_addr <= 11'd0; wr_addr <= 11'd0; cnt <= 12'd0; size <= 16'd0;
         end else begin
             // ----- Host
@@ -181,7 +184,7 @@ module plip_peer #(
                         end else if (prb_o == 8'h44) begin
                             size    <= tx_valid ? {5'd0, tx_len} : 16'd0;
                             rd_addr <= 11'd0;
-                            rt_clks <= clk_cnt - last_recv; last_recv <= clk_cnt;
+                            rt <= since; since <= 20'd0;
                             rak <= 1'b1; st <= RB_1;
                         end
                     end
@@ -238,7 +241,7 @@ module plip_peer #(
                     rak <= 1'b0; bus_oe <= 1'b0; bsel <= 2'd0;
                     done_ok <= 1'b0;
                     if (done_ok && cmd == 8'h33) begin
-                        stat_rx <= stat_rx + 32'd1;
+                        c_rx <= c_rx + 16'd1;
                         if (loop_en && et_hi == 8'hFF && et_lo == 8'hFD && !tx_valid) begin
                             cnt <= 12'd0; cp_ph <= 1'b0; cp_a <= 11'd0; st <= COPY;
                         end else begin
@@ -246,7 +249,7 @@ module plip_peer #(
                         end
                     end else begin
                         if (done_ok && cmd == 8'h44 && size != 16'd0) begin   // Rahmen wurde geliefert
-                            tx_valid <= 1'b0; pulsed <= 1'b0; stat_tx <= stat_tx + 32'd1;
+                            tx_valid <= 1'b0; pulsed <= 1'b0; c_tx <= c_tx + 16'd1;
                         end
                         st <= IDLE;
                     end
