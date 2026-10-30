@@ -3,7 +3,6 @@
 Please read [Networking](https://github.com/MiSTle-Dev/FPGA-Companion/tree/main/NETWORKING.md) first!  
 
 To use the Internet with the NanoMig a **Pi-Pico W** or **Pi-Pico2 W** is mandatory.  
-This file describes the installation and configuration of the network stack **Roadshow**. 
 
 Make sure **PPP** is selected in the Settings menu under Serial:
 
@@ -22,7 +21,7 @@ Place a **PPP** configuration file anywhere you like. For example **S:** or **Pr
 
 <img width="600" height="453" alt="IMG_20261028_222526108_HDR" src="https://github.com/user-attachments/assets/3b9504f6-7107-4003-af21-c4c4522ae266" />
 
-Call the config file with **ppp-dialer**
+Call the config file with **ppp_dialer**
 
 <img width="600" height="447" alt="IMG_20261028_222608031_HDR" src="https://github.com/user-attachments/assets/f8d68899-137f-4e5c-a2a0-58b25120ac50" />
 
