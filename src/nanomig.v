@@ -1485,6 +1485,10 @@ uart_port uart_port (
 );
 `endif
 
+`ifdef ENABLE_PLIP
+wire plip_rx_valid;
+`endif
+
 minimig minimig
 (
 	//m68k pins
@@ -1561,9 +1565,9 @@ minimig minimig
 	.plip_tx_valid  (               ),
 	.plip_h_raddr   (11'd0          ),
 	.plip_h_rdata   (               ),
-	.plip_rx_valid  (               ),
+	.plip_rx_valid  (plip_rx_valid  ),
 	.plip_rx_len    (               ),
-	.plip_h_release (1'b0           ),
+	.plip_h_release (plip_rx_valid  ), // no host: drop every non-$FFFD frame at once, else the next SEND blocks
 	.plip_stat_rx   (               ),
 	.plip_stat_tx   (               ),
 	.plip_rt_clks   (               ),
