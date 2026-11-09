@@ -15,8 +15,8 @@
       reg 2  A_LO    pointer[7:0]   (write only, read gives 0)
       reg 3  A_HI    pointer[15:8]  (write only, read gives 0)
 
-    The pointer is 16 bit like in the CPLD; the RAM is 2**AW bytes (default 8 KB), upper bits of
-    the pointer alias. The host side has its own address (no shared pointer needed, the CPLD swaps
+    The pointer of the CPLD is 16 bit; the RAM here is 2**AW bytes (default 8 KB) and only AW bits
+    of the pointer exist, higher addresses alias. The host side has its own address (no shared pointer needed, the CPLD swaps
     two pointers for the same purpose) and sets/clears the interrupt bits with the same
     byte as the Pi would write to REG_IRQ.
 
@@ -54,7 +54,7 @@ module a314_cp #(
 
 localparam [1:0] REG_SRAM = 2'd0, REG_IRQ = 2'd1, REG_A_LO = 2'd2, REG_A_HI = 2'd3;
 
-reg [15:0] ptr;
+reg [AW-1:0] ptr;                 // the CPLD has 16 bits; the bits above the RAM size would only alias
 reg        cp_irq_r, pi_irq_r;
 assign int6   = cp_irq_r;
 assign pi_irq = pi_irq_r;
@@ -70,8 +70,8 @@ wire a_wr_ram = a_act && a_we && a_reg == REG_SRAM;
 // at the write address is never needed: the pointer moves on / the host reads later.
 // port A: Amiga
 always @(posedge clk) begin
-  if(a_wr_ram) mem[ptr[AW-1:0]] <= a_din;
-  else         ram_q <= mem[ptr[AW-1:0]];
+  if(a_wr_ram) mem[ptr] <= a_din;
+  else         ram_q <= mem[ptr];
 end
 
 // port B: host
@@ -91,7 +91,7 @@ end
 reg [1:0] irq_n;
 always @(posedge clk) begin
   if(reset) begin
-    ptr <= 16'd0;
+    ptr <= {AW{1'b0}};
     cp_irq_r <= 1'b0;
     pi_irq_r <= 1'b0;
   end else begin
@@ -106,9 +106,9 @@ always @(posedge clk) begin
     if(a_act) begin
       if(a_we) begin
         if(a_reg == REG_A_LO) ptr[7:0]  <= a_din;
-        if(a_reg == REG_A_HI) ptr[15:8] <= a_din;
+        if(a_reg == REG_A_HI) ptr[AW-1:8] <= a_din[AW-9:0];
       end
-      if(a_reg == REG_SRAM) ptr <= ptr + 16'd1;     // read and write
+      if(a_reg == REG_SRAM) ptr <= ptr + 1'd1;      // read and write
     end
   end
 end

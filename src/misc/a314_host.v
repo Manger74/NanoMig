@@ -46,8 +46,8 @@ module a314_host #(
 assign irq = pi_irq;
 
 reg [7:0]  command;
-reg [11:0] cnt;                    // index of the byte after the command, saturates
-reg [7:0]  addr_hi;
+reg [1:0]  cnt;                    // index of the byte after the command, saturates at 3
+reg [7:0]  addr_hi;                // only the bits below AW are used
 
 always @(posedge clk) begin
   h_we <= 1'b0;
@@ -58,26 +58,26 @@ always @(posedge clk) begin
 
   if(reset) begin
     command <= 8'hff;
-    cnt <= 12'd0;
+    cnt <= 2'd0;
     h_addr <= {AW{1'b0}};
     data_out <= 8'h00;
   end else if(data_strobe) begin
     if(data_start) begin
       command <= data_in;
-      cnt <= 12'd0;
+      cnt <= 2'd0;
       data_out <= { 7'd0, pi_irq };
     end else begin
-      if(cnt != 12'hfff) cnt <= cnt + 12'd1;
+      if(cnt != 2'd3) cnt <= cnt + 2'd1;
 
       case(command)
         8'd0: data_out <= 8'h00;
 
         8'd1: begin                                   // READ
-                if(cnt == 12'd0) begin
+                if(cnt == 2'd0) begin
                   addr_hi <= data_in;
                   data_out <= 8'h00;
-                end else if(cnt == 12'd1) begin
-                  h_addr <= { addr_hi, data_in };     // truncated to AW bits
+                end else if(cnt == 2'd1) begin
+                  h_addr <= { addr_hi[AW-9:0], data_in };
                   data_out <= 8'h00;
                 end else begin
                   data_out <= h_rdata;                // RAM[h_addr], set by the strobe two bytes earlier
@@ -86,22 +86,22 @@ always @(posedge clk) begin
               end
 
         8'd2: begin                                   // WRITE
-                if(cnt == 12'd0) addr_hi <= data_in;
-                else if(cnt == 12'd1) h_addr <= { addr_hi, data_in };
+                if(cnt == 2'd0) addr_hi <= data_in;
+                else if(cnt == 2'd1) h_addr <= { addr_hi[AW-9:0], data_in };
                 else begin
                   h_wdata <= data_in;
                   h_we <= 1'b1;
                 end
               end
 
-        8'd3: if(cnt == 12'd0) begin
+        8'd3: if(cnt == 2'd0) begin
                 h_irq_data <= data_in;
                 h_irq_we <= 1'b1;
               end
 
-        8'd4: data_out <= (cnt == 12'd0) ? 8'hA3 :
-                          (cnt == 12'd1) ? 8'd1 :
-                          (cnt == 12'd2) ? AW[7:0] : 8'h00;
+        8'd4: data_out <= (cnt == 2'd0) ? 8'hA3 :
+                          (cnt == 2'd1) ? 8'd1 :
+                          (cnt == 2'd2) ? AW[7:0] : 8'h00;
 
         default: data_out <= 8'h00;
       endcase
