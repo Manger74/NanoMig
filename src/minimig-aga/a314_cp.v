@@ -65,16 +65,19 @@ reg [7:0] ram_q;
 wire a_act    = a_sel && a_end;
 wire a_wr_ram = a_act && a_we && a_reg == REG_SRAM;
 
+// Both ports in "normal" mode: the read register keeps its value in the clock of a write. The
+// true dual port block RAM of the GW2A has no read-before-write mode (PA2122), and the old value
+// at the write address is never needed: the pointer moves on / the host reads later.
 // port A: Amiga
 always @(posedge clk) begin
   if(a_wr_ram) mem[ptr[AW-1:0]] <= a_din;
-  ram_q <= mem[ptr[AW-1:0]];
+  else         ram_q <= mem[ptr[AW-1:0]];
 end
 
 // port B: host
 always @(posedge clk) begin
   if(h_we) mem[h_addr] <= h_wdata;
-  h_rdata <= mem[h_addr];
+  else     h_rdata <= mem[h_addr];
 end
 
 always @(*) begin
