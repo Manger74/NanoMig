@@ -22,6 +22,9 @@ module mcu_spi (
 `ifdef ENABLE_PLIP
   output       mcu_net_strobe, // byte strobe for network (virtual parallel port) target
 `endif
+`ifdef ENABLE_A314
+  output       mcu_a314_strobe, // byte strobe for the A314 clockport interface target
+`endif
   output       mcu_start,
   input  [7:0] mcu_sys_din,
   input  [7:0] mcu_hid_din,
@@ -29,6 +32,9 @@ module mcu_spi (
   input  [7:0] mcu_sdc_din,
 `ifdef ENABLE_PLIP
   input  [7:0] mcu_net_din,
+`endif
+`ifdef ENABLE_A314
+  input  [7:0] mcu_a314_din,
 `endif
   output [7:0] mcu_dout
 );
@@ -83,6 +89,9 @@ assign mcu_sdc_strobe = spi_in_strobe && spi_target == 8'd3;
 `ifdef ENABLE_PLIP
 assign mcu_net_strobe = spi_in_strobe && spi_target == 8'd5;
 `endif
+`ifdef ENABLE_A314
+assign mcu_a314_strobe = spi_in_strobe && spi_target == 8'd6;
+`endif
 
 reg [3:0] spi_in_cnt;
 reg [7:0] spi_in_data;
@@ -120,6 +129,9 @@ wire [7:0] in_byte =
 	   (spi_target == 8'd3)?mcu_sdc_din:
 `ifdef ENABLE_PLIP
 	   (spi_target == 8'd5)?mcu_net_din:
+`endif
+`ifdef ENABLE_A314
+	   (spi_target == 8'd6)?mcu_a314_din:
 `endif
 	   8'h00;   
    
