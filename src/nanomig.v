@@ -62,6 +62,14 @@ module nanomig (
    output	 net_irq,
    input	 net_iack,
 `endif
+`ifdef ENABLE_A314
+   // A314 clockport interface: shared memory and interrupt bits for the MCU, SPI target 6
+   input	 a314_strobe,
+   input	 a314_start,
+   input [7:0]	 a314_din,
+   output [7:0]	 a314_dout,
+   output	 a314_irq,
+`endif
 
    // UART/RS232 for e.g. DiagROM or MIDI
    output	 uart_tx,
@@ -1507,6 +1515,29 @@ uart_port uart_port (
 );
 `endif
 
+`ifdef ENABLE_A314
+wire [12:0] a314_h_addr;
+wire        a314_h_we, a314_h_irq_we, a314_pi_irq;
+wire [7:0]  a314_h_wdata, a314_h_rdata, a314_h_irq_data;
+
+a314_host a314_host (
+	.clk          (clk_sys        ),
+	.reset        (por            ),
+	.data_strobe  (a314_strobe    ),
+	.data_start   (a314_start     ),
+	.data_in      (a314_din       ),
+	.data_out     (a314_dout      ),
+	.irq          (a314_irq       ),
+	.h_addr       (a314_h_addr    ),
+	.h_we         (a314_h_we      ),
+	.h_wdata      (a314_h_wdata   ),
+	.h_rdata      (a314_h_rdata   ),
+	.h_irq_we     (a314_h_irq_we  ),
+	.h_irq_data   (a314_h_irq_data),
+	.pi_irq       (a314_pi_irq    )
+);
+`endif
+
 `ifdef ENABLE_PLIP
 wire        plip_en, plip_loop, plip_h_we, plip_h_commit, plip_h_release;
 wire        plip_tx_valid, plip_rx_valid;
@@ -1624,6 +1655,16 @@ minimig minimig
 	.plip_stat_rx   (plip_stat_rx   ),
 	.plip_stat_tx   (plip_stat_tx   ),
 	.plip_rt_clks   (plip_rt_clks   ),
+`endif
+`ifdef ENABLE_A314
+	// A314 clockport interface, host side from a314_host (MCU)
+	.a314_h_addr    (a314_h_addr    ),
+	.a314_h_we      (a314_h_we      ),
+	.a314_h_wdata   (a314_h_wdata   ),
+	.a314_h_rdata   (a314_h_rdata   ),
+	.a314_h_irq_we  (a314_h_irq_we  ),
+	.a314_h_irq_data(a314_h_irq_data),
+	.a314_pi_irq    (a314_pi_irq    ),
 `endif
 
 	//I/O
