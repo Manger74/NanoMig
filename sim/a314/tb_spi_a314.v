@@ -97,7 +97,8 @@ module tb_spi_a314;
             bits(b);
         end
     endtask
-    task spi_end; begin ss = 1; open_tr = 0; #200; end endtask
+    // SS is released by software after the last byte has gone out, never right at its last clock edge
+    task spi_end; begin if (sp_gap < 200) #(200 - sp_gap); ss = 1; open_tr = 0; #200; end endtask
 
     reg [7:0] st;
     task spi_status; begin xfer(8'd0, 1); xfer(8'd0, 0); st = rep; spi_end; end endtask
