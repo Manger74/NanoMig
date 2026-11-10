@@ -775,6 +775,7 @@ nanomig nanomig
  .a314_din(mcu_data_out),
  .a314_dout(a314_data_out),
  .a314_irq(a314_int),
+ .a314_iack(int_ack[6]),
 `endif
  
  // keyboard & mouse				 

@@ -69,6 +69,7 @@ module nanomig (
    input [7:0]	 a314_din,
    output [7:0]	 a314_dout,
    output	 a314_irq,
+   input	 a314_iack,
 `endif
 
    // UART/RS232 for e.g. DiagROM or MIDI
@@ -1528,6 +1529,7 @@ a314_host a314_host (
 	.data_in      (a314_din       ),
 	.data_out     (a314_dout      ),
 	.irq          (a314_irq       ),
+	.iack         (a314_iack      ),
 	.h_addr       (a314_h_addr    ),
 	.h_we         (a314_h_we      ),
 	.h_wdata      (a314_h_wdata   ),

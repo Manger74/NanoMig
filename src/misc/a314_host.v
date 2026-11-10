@@ -16,8 +16,9 @@
                  that are 1, bit 7 = 0 clears them (bit 0 = INT6 to the Amiga, bit 1 = pi_irq)
     cmd 4 ID     reply 1: status, reply 2: 0xA3, reply 3: version (1), reply 4: RAM size log2 (AW)
 
-    irq (level) is pi_irq: the Amiga has called set_pi_irq. The Companion clears it with
-    cmd 3 / 0x02 after it has taken the work (like a314d does), that is also the acknowledge.
+    irq is raised when pi_irq rises (the Amiga has called set_pi_irq) and cleared by iack
+    (int_ack[6] of sysctrl), like the interrupt of plip_host. pi_irq itself is cleared by the
+    Companion with cmd 3 / 0x02 before it takes the work (like a314d does); STATUS shows it.
 */
 
 module a314_host #(
@@ -31,7 +32,8 @@ module a314_host #(
   input [7:0]       data_in,
   output reg [7:0]  data_out,
 
-  output            irq,
+  output reg        irq,
+  input             iack,
 
   // a314_cp host side
   output reg [AW-1:0] h_addr,
@@ -43,7 +45,16 @@ module a314_host #(
   input             pi_irq
 );
 
-assign irq = pi_irq;
+// interrupt to the MCU: raised when the Amiga sets pi_irq, cleared by the acknowledge of sysctrl
+// (not a level: the MCU acknowledges first and serves the request later in a task; a line that
+// stays active until then would keep its interrupt handler busy forever)
+reg pi_irq_d;
+always @(posedge clk) begin
+  pi_irq_d <= pi_irq;
+  if(iack) irq <= 1'b0;
+  if(pi_irq && !pi_irq_d) irq <= 1'b1;
+  if(reset) irq <= 1'b0;
+end
 
 reg [7:0]  command;
 reg [1:0]  cnt;                    // index of the byte after the command, saturates at 3

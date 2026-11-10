@@ -24,6 +24,8 @@ module tb_spi_a314;
     reg  [7:0] a_din = 0;
     wire [7:0] a_dout;
     wire       int6, pi_irq, irq;
+    reg        iack = 0;
+    task ack; begin iack = 1; clk1; iack = 0; clk1; end endtask
     wire [AW-1:0] h_addr; wire h_we, h_irq_we; wire [7:0] h_wdata, h_irq_data, h_rdata;
 
     a314_cp #(.AW(AW)) cp (
@@ -51,7 +53,7 @@ module tb_spi_a314;
     a314_host #(.AW(AW)) host (
         .clk(clk), .reset(rst),
         .data_strobe(a314_strobe), .data_start(mcu_start), .data_in(mcu_dout), .data_out(a314_din),
-        .irq(irq),
+        .irq(irq), .iack(iack),
         .h_addr(h_addr), .h_we(h_we), .h_wdata(h_wdata), .h_rdata(h_rdata),
         .h_irq_we(h_irq_we), .h_irq_data(h_irq_data), .pi_irq(pi_irq)
     );
@@ -139,8 +141,16 @@ module tb_spi_a314;
         wreg(REG_IRQ, 8'h82);
         check(irq === 1'b1 && int6 === 1'b0, "set_pi_irq -> irq line");
         spi_status; check(st === 8'h01, "STATUS shows pi_irq");
+        ack;
+        check(irq === 1'b0 && pi_irq === 1'b1, "acknowledge drops the irq line, pi_irq stays");
+        spi_status; check(st === 8'h01, "STATUS still shows pi_irq");
+        wreg(REG_IRQ, 8'h82);
+        check(irq === 1'b0, "pi_irq set again while set: no new interrupt");
         spi_irq(8'h02);
-        check(irq === 1'b0, "Companion clears pi_irq");
+        check(irq === 1'b0 && pi_irq === 1'b0, "Companion clears pi_irq");
+        wreg(REG_IRQ, 8'h82); check(irq === 1'b1, "next set_pi_irq interrupts again");
+        spi_irq(8'h02); check(irq === 1'b1, "clearing pi_irq is not the acknowledge");
+        ack; check(irq === 1'b0, "acknowledged");
         spi_irq(8'h81);
         check(int6 === 1'b1 && irq === 1'b0, "Companion raises INT6");
         rreg(REG_IRQ, v); check(v === 8'h01, "Amiga sees the interrupt");
@@ -177,8 +187,8 @@ module tb_spi_a314;
         n = 0; for (i = 0; i < 8; i = i + 1) if (rx[3 + i] !== ("ethernet" >> (8 * (7 - i)) & 8'hff)) n = n + 1;
         check(rx[0] === 8'd8 && rx[1] === 8'd4 && rx[2] === 8'd1 && n == 0, "CONNECT packet");
         tx[0] = 8'd11; spi_write(16'd513, 1);           // a2r_head = 11
-        spi_irq(8'h02);
-        check(irq === 1'b0, "pi_irq cleared");
+        spi_irq(8'h02); ack;
+        check(irq === 1'b0 && pi_irq === 1'b0, "pi_irq cleared and acknowledged");
         tx[0] = 8'd1; tx[1] = 8'd5; tx[2] = 8'd1; tx[3] = 8'd0;   // CONNECT_RESPONSE, result 0
         spi_write(16'd256, 4);
         tx[0] = 8'd4; spi_write(16'd512, 1);            // r2a_tail = 4
