@@ -188,7 +188,7 @@ always @(posedge clk_28m, posedge rst_28m) begin
     if (rst_28m)
         nanomig_reset <= 1'b1;
     else
-        nanomig_reset <= !rom_done || reset || osd_reset || kbd_reset
+        nanomig_reset <= !rom_ok || reset || osd_reset || kbd_reset
 `ifndef DISABLE_ROM_LOADER
                          || rom_download_in_progress
 `endif
@@ -817,10 +817,16 @@ reg         flash_ram_write;
 // once the copy counter has run to zero, all rom has been copied
 wire        rom_done = (word_count == 0);
 
+// rom has been copied and verified, cpu may be released
+reg         rom_verified;
+reg         verify_retry;          // restart the copy after a failed verify
+reg  [15:0] flash_sum;             // sum of all words copied from flash
+wire        rom_ok = rom_done && rom_verified;
+
 `ifdef DISABLE_ROM_LOADER
-assign leds[3] = !rom_done;
+assign leds[3] = !rom_ok;
 `else
-assign leds[3] = !rom_done || rom_download_in_progress;
+assign leds[3] = !rom_ok || rom_download_in_progress;
 `endif
 
 /* -------------- detect osd_kickstart change and trigger reload ---------------- */
@@ -841,7 +847,7 @@ localparam FLASH_STATE_NEXT  = 4;
 reg [2:0] flash_state;
 
 always @(posedge clk_28m, posedge rst_28m, posedge reset) begin
-  if (rst_28m || reset || kickstart_reload) begin
+  if (rst_28m || reset || kickstart_reload || verify_retry) begin
     flash_state <= FLASH_STATE_INIT;
 
   end else begin
@@ -856,6 +862,7 @@ always @(posedge clk_28m, posedge rst_28m, posedge reset) begin
           endcase
           flash_ram_addr <= 18'h0;
           word_count     <= 32'h40000;
+          flash_sum      <= 16'h0;
 
           flash_cs        <= 0;
           flash_ram_write <= 0;
@@ -885,6 +892,7 @@ always @(posedge clk_28m, posedge rst_28m, posedge reset) begin
           flash_ram_write <= 0;
           flash_ram_addr  <= flash_ram_addr + 1;
           flash_addr      <= flash_addr + 1;
+          flash_sum       <= flash_sum + flash_dout;
           flash_state     <= FLASH_STATE_READ;
           word_count      <= word_count - 1;
         end
@@ -893,6 +901,54 @@ always @(posedge clk_28m, posedge rst_28m, posedge reset) begin
         flash_state <= FLASH_STATE_INIT;
       end
     endcase
+  end
+end
+
+/* -------------- verify the rom copy by reading it back from sdram ---------------- */
+// The sum of all words copied from flash is compared with the sum read back
+// from sdram in eight passes. On a mismatch the copy is restarted.
+reg  [15:0] verify_sum;
+reg  [17:0] verify_addr;
+reg  [2:0]  verify_pass;
+reg         verify_ph, verify_fail;
+wire [15:0] verify_next = verify_sum + sdram_dout;
+
+wire        verify_active = rom_done && !rom_verified && !verify_fail
+`ifndef DISABLE_ROM_LOADER
+                            && !rom_download_in_progress
+`endif
+                            ;
+
+always @(posedge clk_28m) begin
+  verify_retry <= 1'b0;
+  if (!rom_done) begin
+    rom_verified <= 1'b0;
+    verify_fail  <= 1'b0;
+    verify_sum   <= 16'h0;
+    verify_addr  <= 18'h0;
+    verify_pass  <= 3'd0;
+    verify_ph    <= 1'b0;
+`ifndef DISABLE_ROM_LOADER
+  end else if (rom_download_in_progress) begin
+    rom_verified <= 1'b1;   // rom is being replaced by the companion, nothing to verify
+`endif
+  end else if (verify_active && clk7n_en) begin
+    // each address is held for two bus cycles, so sdram_dout is valid
+    // independent of the exact sdram read latency
+    verify_ph <= !verify_ph;
+    if (verify_ph) begin
+      verify_addr <= verify_addr + 18'd1;
+      verify_sum  <= verify_next;
+      if (&verify_addr) begin
+        verify_sum  <= 16'h0;
+        verify_pass <= verify_pass + 3'd1;
+        if (verify_next != flash_sum) begin
+          verify_fail  <= 1'b1;
+          verify_retry <= 1'b1;
+        end else if (&verify_pass)
+          rom_verified <= 1'b1;
+      end
+    end
   end
 end
 
@@ -914,6 +970,7 @@ wire	    sdram_rw      = !ram_we_n;
 
 wire		sdram_cs      =
 			!rom_done?flash_ram_write:
+			verify_active?1'b1:                      // rom read back for verification
 `ifndef DISABLE_ROM_LOADER
 			rom_download_in_progress?rom_data_word_we:
 `endif
@@ -923,6 +980,7 @@ wire        sdram_sync    = clk7_en;
    
 wire		sdram_refresh = 
 			!rom_done?1'b0:
+			verify_active?1'b0:
 `ifndef DISABLE_ROM_LOADER
 			rom_download_in_progress?1'b0:
 `endif
@@ -937,6 +995,7 @@ wire [15:0] sdram_din     =
    
 wire [1:0]  sdram_be      =
 			!rom_done?2'b00:                         // flash download always does word access
+			verify_active?2'b00:                     // verify reads words
 `ifndef DISABLE_ROM_LOADER
 			rom_download_in_progress?2'b00:          //          -"-
 `endif
@@ -950,7 +1009,8 @@ wire		 minimig_is_accessing_256k_rom = kick_is_256k && minimig_is_accessing_rom;
 `endif
 
 wire		sdram_we      = 
-			!rom_done?flash_ram_write:               // flash download write enable			
+			!rom_done?flash_ram_write:               // flash download write enable
+			verify_active?1'b0:                      // verify only reads
 `ifndef DISABLE_ROM_LOADER
 			rom_download_in_progress?rom_data_word_we:
 `endif
@@ -960,6 +1020,7 @@ wire		sdram_we      =
 
 wire [21:0] sdram_addr    = 
 			!rom_done?{4'b1111, flash_ram_addr}:                // initial rom download from flash
+			verify_active?{4'b1111, verify_addr}:               // rom read back for verification
 `ifndef DISABLE_ROM_LOADER
 			rom_download_in_progress?{4'b1111, rom_data_addr}:  // rom download from sd card
 			minimig_is_accessing_256k_rom?{ram_a[22:19],1'b0,ram_a[17:1]}:  // regular rom access into 256k kickstart
