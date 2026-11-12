@@ -7,7 +7,11 @@ module amigaclks (
 	output clk_sdram,
 	output locked,
 	// video clocks
-	input vidmode,	// 1: 28MHz pixel clock, 0: 56MHz pixel clock (RTG)
+	// 2'b01: 28.5MHz pixel clock (native Amiga video, default)
+	// 2'b10: 39.9MHz pixel clock (800x600@60)
+	// 2'b11: 74.1MHz pixel clock (1280x720@60)
+	// 2'b00: 57MHz pixel clock (former RTG setting)
+	input [1:0] vidmode,
 	output clk_tmds,
 	output clk_pixel,
 	output video_locked
@@ -61,13 +65,47 @@ defparam sysclk_inst.CLKOUTD3_SRC = "CLKOUT";
 defparam sysclk_inst.DEVICE = "GW2AR-18C";
 
 
-wire [5:0] fbdsel;
-wire [5:0] odsel;
+// Dynamic divider codes of the tmds rPLL (input 28.5MHz, IDIV=1):
+//   FBDSEL = 64 - FBDIV   (x5 = 111011, x10 = 110110 are the codes already used
+//                          here, x7 and x13 follow the same rule)
+//   ODSEL  = 111110 -> ODIV 4, 111111 -> ODIV 2
+// TMDS clock = 28.5MHz * FBDIV, VCO = TMDS clock * ODIV (must stay in 500..1250MHz)
+//
+//   vidmode  FBDIV ODIV   VCO     TMDS     pixel (TMDS/5)
+//     01       5    4    570.0   142.5     28.50
+//     00      10    2    570.0   285.0     57.00
+//     10       7    4    798.0   199.5     39.90
+//     11      13    2    741.0   370.5     74.10
+reg [5:0] fbdsel;
+reg [5:0] odsel;
 
-assign fbdsel = vidmode ? 6'b111011 : 6'b110110;
-assign odsel = vidmode ? 6'b111110 : 6'b111111;
+always @(*) begin
+    case (vidmode)
+        2'b00:   begin fbdsel = 6'b110110; odsel = 6'b111111; end
+        2'b10:   begin fbdsel = 6'b111001; odsel = 6'b111110; end
+        2'b11:   begin fbdsel = 6'b110011; odsel = 6'b111111; end
+        default: begin fbdsel = 6'b111011; odsel = 6'b111110; end   // 2'b01 native
+    endcase
+end
+
+// The rPLL has to be reset after its dynamic dividers have been changed. The
+// reset is derived from clk_28 which does not depend on the tmds PLL. The
+// power-up value matches the native setting the PLL is generated for.
+reg [1:0] vidmode_q = 2'b01;
+reg [4:0] tmds_rst_cnt = 5'd0;
+wire      tmds_reset = (tmds_rst_cnt != 5'd0);
+
+always @(posedge clk_28_i) begin
+    vidmode_q <= vidmode;
+    if (vidmode_q != vidmode)       tmds_rst_cnt <= 5'd31;
+    else if (tmds_rst_cnt != 5'd0)  tmds_rst_cnt <= tmds_rst_cnt - 5'd1;
+end
 
 wire clk_tmds_i;
+wire tmds_lock_i;
+
+// tmds/pixel clocks are only usable once the PLL is locked again after a mode change
+assign video_locked = tmds_lock_i & ~tmds_reset;
 
 assign clk_tmds = clk_tmds_i;
 
@@ -83,11 +121,11 @@ defparam clkdiv_inst.GSREN = "false";
 
 rPLL tmdsclk_inst (
     .CLKOUT(clk_tmds_i),
-    .LOCK(video_locked),
+    .LOCK(tmds_lock_i),
     .CLKOUTP(),
     .CLKOUTD(),
     .CLKOUTD3(),
-    .RESET(1'b0),
+    .RESET(tmds_reset),
     .RESET_P(1'b0),
     .CLKIN(clk_28_i),
     .CLKFB(1'b0),

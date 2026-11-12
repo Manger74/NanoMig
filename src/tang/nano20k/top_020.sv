@@ -116,6 +116,19 @@ assign leds_n = ~leds;
 
 wire clk_pixel_x5;   
 wire pll_lock;   
+wire video_locked;
+
+// HDMI video mode: 2'b01 = native Amiga video (28.5MHz pixel clock),
+// 2'b10 = 800x600@60, 2'b11 = 1280x720@60 (see amigaclks.v and hdmi.sv).
+// Until RTG takes over, the extended modes are only selectable for test builds
+// (define RTG_TEST_720P or RTG_TEST_800X600 together with HDMI_VIDEO_MODES).
+`ifdef RTG_TEST_720P
+wire [1:0] video_mode = 2'b11;
+`elsif RTG_TEST_800X600
+wire [1:0] video_mode = 2'b10;
+`else
+wire [1:0] video_mode = 2'b01;
+`endif
 wire clk_7;
 wire clk_28m;
 wire clk_85m;
@@ -129,10 +142,10 @@ amigaclks amigaclks (
 	.clk_85m(clk_85m),
 	.clk_sdram(clk_85m_shifted),
 	.locked(pll_lock),
-	.vidmode(1'b1),
+	.vidmode(video_mode),
 	.clk_tmds(clk_pixel_x5),
 	.clk_pixel(clk_pixel),
-	.video_locked()
+	.video_locked(video_locked)
 );
 
 wire rst_28m, rst_28m_n;
@@ -1060,9 +1073,19 @@ reg signed [14:0] scaled_audio_right;
 // truncation leaves the stream running fast, which makes sinks drop a chunk of
 // audio every few seconds. A phase accumulator keeps the fractional part.
 localparam integer AUDIO_RATE = 48000;
+`ifdef HDMI_VIDEO_MODES
+// pixel clock depends on the video mode: 28.5, 39.9 or 74.1MHz
+localparam integer AUDIO_ACC_WIDTH = 27;
+localparam [AUDIO_ACC_WIDTH-1:0] AUDIO_INC_NATIVE = ((AUDIO_ACC_WIDTH*2)'(AUDIO_RATE) <<< AUDIO_ACC_WIDTH) / 28500000;
+localparam [AUDIO_ACC_WIDTH-1:0] AUDIO_INC_800    = ((AUDIO_ACC_WIDTH*2)'(AUDIO_RATE) <<< AUDIO_ACC_WIDTH) / 39900000;
+localparam [AUDIO_ACC_WIDTH-1:0] AUDIO_INC_720P   = ((AUDIO_ACC_WIDTH*2)'(AUDIO_RATE) <<< AUDIO_ACC_WIDTH) / 74100000;
+wire [AUDIO_ACC_WIDTH-1:0] AUDIO_INC = (video_mode == 2'b11) ? AUDIO_INC_720P :
+                                       (video_mode == 2'b10) ? AUDIO_INC_800 : AUDIO_INC_NATIVE;
+`else
 localparam integer AUDIO_ACC_WIDTH = $clog2(`PIXEL_CLOCK + AUDIO_RATE);
 
 localparam [AUDIO_ACC_WIDTH-1:0] AUDIO_INC = ((AUDIO_ACC_WIDTH*2)'(AUDIO_RATE) <<< AUDIO_ACC_WIDTH) / `PIXEL_CLOCK;
+`endif
 
 reg [AUDIO_ACC_WIDTH-1:0] aclk_acc;
 reg                       clk_audio;
@@ -1150,6 +1173,20 @@ video_analyzer video_analyzer (
     .vreset      ( vreset    )
 );
 
+`ifdef HDMI_VIDEO_MODES
+// Extended modes run free and are held in reset while the tmds PLL is being
+// re-locked after a mode change. The reset asserts asynchronously because
+// clk_pixel stops while the PLL is in reset, and releases synchronously.
+reg [1:0] hdmi_rst_sync = 2'b11;
+always @(posedge clk_pixel or negedge video_locked) begin
+    if (!video_locked) hdmi_rst_sync <= 2'b11;
+    else               hdmi_rst_sync <= { hdmi_rst_sync[0], 1'b0 };
+end
+wire hdmi_reset = video_mode[1] ? hdmi_rst_sync[1] : vreset;
+`else
+wire hdmi_reset = vreset;
+`endif
+
 hdmi #(
     .AUDIO_RATE(AUDIO_RATE),
     .AUDIO_BIT_WIDTH(16),
@@ -1163,11 +1200,14 @@ hdmi #(
   .tmds(tmds),
   .tmds_clock(tmds_clock),
 
+`ifdef HDMI_VIDEO_MODES
+  .video_mode(video_mode),
+`endif
   .pal_mode(vpal),
   .short_frame ( short_frame ),
   .screen ( osd_video_screen ),
   .interlace(interlace),
-  .reset(vreset),    // signal to synchronize HDMI
+  .reset(hdmi_reset),    // signal to synchronize HDMI
 
   .rgb( { video_red, 2'b00, video_green, 2'b00, video_blue, 2'b00 } )
 );

@@ -9,4 +9,6 @@ src/impl/pnr/**
 
 impl/gwsynthesis/**
 impl/temp/**
-impl/pnr/**
+impl/pnr/**src/tang/nano20k/config_020_*.vh
+src/tang/nano20k/nanomig_020_*.sdc
+src/scripts/.build_020_*.tcl
