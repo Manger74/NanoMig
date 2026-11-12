@@ -228,6 +228,15 @@ module minimig
 	input	      a314_h_irq_we,
 	input [7:0]   a314_h_irq_data,
 	output	      a314_pi_irq,
+`ifdef A314_FAST
+	// Amiga side directly from the cpu wrapper (TG68K), not through the chip bus
+	input	      a314_f_sel,
+	input	      a314_f_end,
+	input	      a314_f_we,
+	input [1:0]   a314_f_reg,
+	input [7:0]   a314_f_din,
+	output [7:0]  a314_f_dout,
+`endif
 `endif
 
 	//I/O
@@ -1136,6 +1145,18 @@ assign int6_toccata = 1'b0;
 //-------------------------------------------------------------------------------------
 
 `ifdef ENABLE_A314
+`ifdef A314_FAST
+// ---- A314 clockport interface, Amiga side from the cpu wrapper (A314_FAST): the CPU accesses
+// $D8xxxx without the chip bus, the bridge and the glue below never see them
+a314_cp A314 (
+	.clk(clk), .reset(reset),
+	.a_sel(a314_f_sel), .a_end(a314_f_end), .a_we(a314_f_we), .a_reg(a314_f_reg),
+	.a_din(a314_f_din), .a_dout(a314_f_dout), .int6(int6_a314),
+	.h_addr(a314_h_addr), .h_we(a314_h_we), .h_wdata(a314_h_wdata), .h_rdata(a314_h_rdata),
+	.h_irq_we(a314_h_irq_we), .h_irq_data(a314_h_irq_data), .pi_irq(a314_pi_irq)
+);
+wire [15:0] a314_out = 16'h0000;
+`else
 // ---- A314 clockport interface: 4 byte registers at $D80001 + reg*4 (see a314_cp.v)
 // One bus cycle = one access. Whether a cycle belongs to the A314 and which register it
 // means is decided when the cycle starts; the first write strobe of the cycle takes the
@@ -1175,6 +1196,7 @@ a314_cp A314 (
 );
 
 wire [15:0] a314_out = (a314_acc && cpu_rd) ? {a314_dout, a314_dout} : 16'h0000;
+`endif
 `else
 assign int6_a314 = 1'b0;
 `endif

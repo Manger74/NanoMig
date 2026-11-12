@@ -304,6 +304,13 @@ always @(posedge clk_sys) begin
 end
 `endif
 
+`ifdef A314_FAST
+// A314 clockport accesses of the CPU, from cpu_wrapper straight to a314_cp in minimig
+wire       a314_f_sel, a314_f_end, a314_f_we;
+wire [1:0] a314_f_reg;
+wire [7:0] a314_f_din, a314_f_dout;
+`endif
+
 cpu_wrapper cpu_wrapper
 (
 	.reset        (cpu_rst         ),
@@ -349,6 +356,15 @@ cpu_wrapper cpu_wrapper
 	.ramdin       (ram_din         ),
 	.ramready     (ram_ready       ),
 	.ramshared    (                ),
+
+`ifdef A314_FAST
+	.a314_sel     (a314_f_sel      ),
+	.a314_end     (a314_f_end      ),
+	.a314_we      (a314_f_we       ),
+	.a314_reg     (a314_f_reg      ),
+	.a314_din     (a314_f_din      ),
+	.a314_dout    (a314_f_dout     ),
+`endif
 
 	//custom CPU signals
 	.cpustate     (cpu_state       ),
@@ -1674,6 +1690,14 @@ minimig minimig
 	.a314_h_irq_we  (a314_h_irq_we  ),
 	.a314_h_irq_data(a314_h_irq_data),
 	.a314_pi_irq    (a314_pi_irq    ),
+`ifdef A314_FAST
+	.a314_f_sel     (a314_f_sel     ),
+	.a314_f_end     (a314_f_end     ),
+	.a314_f_we      (a314_f_we      ),
+	.a314_f_reg     (a314_f_reg     ),
+	.a314_f_din     (a314_f_din     ),
+	.a314_f_dout    (a314_f_dout    ),
+`endif
 `endif
 
 	//I/O
