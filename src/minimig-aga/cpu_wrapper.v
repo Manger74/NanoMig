@@ -180,19 +180,27 @@ wire   ramsel    = cpu_req & ~sel_nmi_vector & (sel_zram | sel_chipram | sel_kic
 
 `ifdef A314_FAST
 // A314 clockport ($D8xxxx like gary.v): the registers are in the FPGA, so an access needs
-// neither a chip bus slot nor the 7MHz handshake. One clock with a314_sel = a314_end = 1
-// (data in/out, the side effects happen at its end, the CPU takes the data with the same
-// clkena), then one clock pause: the RAM read register of a314_cp needs it after the
-// pointer has moved, and the CPU puts its next request up in that clock.
+// neither a chip bus slot nor the 7MHz handshake. The request is taken into registers in the
+// clock after the CPU has put it up, the clock after that is the access (a314_sel = a314_end
+// = 1, data in/out, side effects at its end) and gives the clkena. So the CPU never advances
+// in two clocks in a row (CPU_SLOW14: the TG68K paths are two cycle paths in the sdc), the
+// clkena comes from a register (no path from the CPU's address to its own clock enable), and
+// a314_cp gets one clock between two accesses for its RAM read register.
 wire sel_a314f = cpu_req & (cpu_addr[31:16] == 16'h00D8);
-reg  a314_gap;
-always @(posedge clk) a314_gap <= reset & sel_a314f & ~a314_gap;
-wire a314_ready = sel_a314f & ~a314_gap;
+reg       a314_ready, a314_we_r;
+reg [1:0] a314_reg_r;
+reg [7:0] a314_din_r;
+always @(posedge clk) begin
+	a314_ready <= reset & sel_a314f & ~a314_ready;
+	a314_reg_r <= cpu_addr[3:2];
+	a314_we_r  <= cpustate == 2'b11;
+	a314_din_r <= ~lds_in ? cpu_dout[7:0] : cpu_dout[15:8];
+end
 assign a314_sel = a314_ready;
 assign a314_end = a314_ready;
-assign a314_we  = cpustate == 2'b11;
-assign a314_reg = cpu_addr[3:2];
-assign a314_din = ~lds_in ? cpu_dout[7:0] : cpu_dout[15:8];
+assign a314_we  = a314_we_r;
+assign a314_reg = a314_reg_r;
+assign a314_din = a314_din_r;
 `else
 wire sel_a314f  = 1'b0;
 wire a314_ready = 1'b0;
@@ -264,7 +272,7 @@ reg  [15:0] chip_data;
 
 wire [15:0] cpu_din = ramsel ? ramdat :
 `ifdef A314_FAST
-	    sel_a314f ? {a314_dout, a314_dout} :
+	    a314_ready ? {a314_dout, a314_dout} :
 `endif
 `ifdef FASTCHIP_DEPRECATED
 	    fastchip_selack ? fastchip_dout :

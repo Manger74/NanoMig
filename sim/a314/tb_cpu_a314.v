@@ -79,6 +79,14 @@ always @(posedge clk) if(a_end) begin
   end
 end
 
+// CPU_SLOW14: the TG68K must never get clkena in two clocks in a row (the sdc treats all its
+// internal paths as two cycle paths); without CPU_SLOW14 this is only counted
+reg clkena_d = 0; integer n_clkena2 = 0;
+always @(posedge clk) begin
+  clkena_d <= cpu_clkena;
+  if(rst_n && cpu_clkena && clkena_d) n_clkena2 = n_clkena2 + 1;
+end
+
 integer errors = 0;
 task check(input c, input [8*80-1:0] msg); begin
   if(c) $display("ok   %0s", msg); else begin $display("FAIL %0s", msg); errors = errors + 1; end
@@ -115,6 +123,11 @@ initial begin
   check(A314.ptr == 13'h123 + 64, "pointer after the read loop");
   check(n_sram == 128, "exactly 128 SRAM accesses (no double side effects)");
   check(chip_d8 == 0, "no $D8xxxx access on the chip bus");
+`ifdef CPU_SLOW14
+  check(n_clkena2 == 0, "CPU_SLOW14: never clkena in two clocks in a row");
+`else
+  $display("     clkena in two clocks in a row: %0d times", n_clkena2);
+`endif
   $display("clockport read loop: %0d clocks per byte (%0d ns)", (t_last - t_first) / 63 / 35, (t_last - t_first) / 63);
   if(errors == 0) $display("PASS (TURBO=%0d)", TURBO); else $display("FAIL (%0d errors)", errors);
   $finish;
