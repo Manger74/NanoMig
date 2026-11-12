@@ -17,13 +17,14 @@
 `define ENABLE_CACHE // MiSTer cpu cache between the cpu and the sdram (cached kickstart + fast ram)
 `define CHIPRAM_CACHE
 // `define DISABLE_IDE  // v32 experiment: cache + ide together
-// `define NO_WS2812   // drop the rgb status led to make room for cache + ide
+`define NO_WS2812   // drop the rgb status led to make room for cache + ide
 `define DENISE_EBR   // block ram based bitplane and sprite buffers, saves logic
 `define DISABLE_ROM_LOADER // drop the rom loader to make room 
 // `define ENABLE_AT_MODEM // serial port <-> virtual AT modem of the FPGA Companion (replaces the midi_in pin)
 // `define ENABLE_PLIP // virtual parallel port: network via plipbox.device and the FPGA Companion, see doc/PLIP.md
 // `define PLIP_LITE   // PLIP without statistics and loopback test, saves logic (needed for the 020 build)
-`define HQ_DRIVE_SOUNDS // drive sounds: with = tone bursts (drive_sounds_hq), without = single click (drive_sounds_min, fewer LEs)
+`define ENABLE_A314 // A314 clockport interface at $D80001: network via a314eth.device and the FPGA Companion, see doc/A314.md (4 BSRAM)
+// `define HQ_DRIVE_SOUNDS // drive sounds: with = tone bursts (drive_sounds_hq), without = single click (drive_sounds_min, fewer LEs)
 
 module top(
   input			clk,
@@ -251,6 +252,18 @@ wire       mcu_sys_strobe;        // mcu message byte valid for sysctrl
 wire       mcu_hid_strobe;        // -"- hid
 wire       mcu_osd_strobe;        // -"- osd
 wire       mcu_sdc_strobe;        // -"- sdc
+`ifdef ENABLE_PLIP
+wire       mcu_net_strobe;        // -"- network (virtual parallel port)
+wire [7:0] net_data_out;
+wire       net_int;
+`endif
+`ifdef ENABLE_A314
+wire       mcu_a314_strobe;       // -"- A314 clockport interface
+wire [7:0] a314_data_out;
+wire       a314_int;
+`else
+wire       a314_int = 1'b0;
+`endif
 wire       mcu_start;             // first byte of MCU message
 
 wire [7:0] mcu_data_out;  
@@ -275,6 +288,14 @@ mcu_spi mcu (
      .mcu_hid_strobe(mcu_hid_strobe),
      .mcu_osd_strobe(mcu_osd_strobe),
      .mcu_sdc_strobe(mcu_sdc_strobe),
+`ifdef ENABLE_PLIP
+     .mcu_net_strobe(mcu_net_strobe),
+     .mcu_net_din(net_data_out),
+`endif
+`ifdef ENABLE_A314
+     .mcu_a314_strobe(mcu_a314_strobe),
+     .mcu_a314_din(a314_data_out),
+`endif
      .mcu_start(mcu_start),
      .mcu_dout(mcu_data_out),
      .mcu_sys_din(sys_data_out),
@@ -551,7 +572,11 @@ sysctrl #(
 	.system_drive_sounds(osd_drive_sounds),
 
         .int_out_n(spi_intn),
-        .int_in( { 4'b0000, sdc_int, 1'b0, hid_int, 1'b0 }),
+`ifdef ENABLE_PLIP
+        .int_in( { 1'b0, a314_int, net_int, 1'b0, sdc_int, 1'b0, hid_int, 1'b0 }),
+`else
+        .int_in( { 1'b0, a314_int, 2'b00, sdc_int, 1'b0, hid_int, 1'b0 }),
+`endif
         .int_ack( int_ack ),
 
 `ifdef ENABLE_AT_MODEM
@@ -734,6 +759,24 @@ nanomig nanomig
  .serial_rx_strobe(serial_rx_strobe),
  .serial_rx_data(serial_rx_data),
 `endif
+`ifdef ENABLE_PLIP
+ // virtual parallel port (plipbox), frames via the MCU (SPI target 5)
+ .net_strobe(mcu_net_strobe),
+ .net_start(mcu_start),
+ .net_din(mcu_data_out),
+ .net_dout(net_data_out),
+ .net_irq(net_int),
+ .net_iack(int_ack[5]),
+`endif
+`ifdef ENABLE_A314
+ // A314 clockport interface, memory and interrupt bits via the MCU (SPI target 6)
+ .a314_strobe(mcu_a314_strobe),
+ .a314_start(mcu_start),
+ .a314_din(mcu_data_out),
+ .a314_dout(a314_data_out),
+ .a314_irq(a314_int),
+ .a314_iack(int_ack[6]),
+`endif
  
  // keyboard & mouse				 
  .mouse_buttons(mouse_buttons), // mouse buttons
@@ -804,9 +847,8 @@ always @(posedge clk_28m, posedge rst_28m) begin
 end
 
 /* -------------- state machine copying data from flash to sdram ---------------- */
-reg  [21:0] flash_addr = 22'h200000;
 reg  [17:0] flash_ram_addr = 18'h0;
-reg  [31:0] word_count = 32'h40000;
+reg   [1:0] flash_ks = 2'b01;           // kickstart selection latched at start of copy
 
 wire [15:0] flash_dout;
 reg         flash_cs;
@@ -814,8 +856,13 @@ wire        flash_data_strobe;
 wire        flash_busy;
 reg         flash_ram_write;
 
-// once the copy counter has run to zero, all rom has been copied
-wire        rom_done = (word_count == 0);
+// flash word address: the 256k word (512kBytes) kickstart images sit at
+// 4,0 MB (3.1, default), 7,0 MB (1.3) and 7,5 MB (3.2)
+wire [21:0] flash_addr = { 1'b1, ~flash_ks[0], ~flash_ks[0], flash_ks == 2'b10, flash_ram_addr };
+
+// set once all rom has been copied (carry out of the 18 bit word counter)
+reg         rom_done = 1'b0;
+wire [18:0] flash_ram_addr_next = {1'b0, flash_ram_addr} + 19'd1;
 
 `ifdef DISABLE_ROM_LOADER
 assign leds[3] = !rom_done;
@@ -848,14 +895,9 @@ always @(posedge clk_28m, posedge rst_28m, posedge reset) begin
     case (flash_state)
       FLASH_STATE_INIT: begin
         if (clk7n_en && flash_ready_d2) begin
-          case(osd_kickstart)
-                  2'b00: flash_addr <= 22'h380000; // Kickstart 1.3 (at 7,0 MB)
-                  2'b01: flash_addr <= 22'h200000; // Kickstart 3.1 (at 4,0 MB)
-                  2'b10: flash_addr <= 22'h3C0000; // Kickstart 3.2 (at 7,5 MB)
-                  default: flash_addr <= 22'h200000;
-          endcase
+          flash_ks       <= osd_kickstart;
           flash_ram_addr <= 18'h0;
-          word_count     <= 32'h40000;
+          rom_done       <= 1'b0;
 
           flash_cs        <= 0;
           flash_ram_write <= 0;
@@ -863,7 +905,7 @@ always @(posedge clk_28m, posedge rst_28m, posedge reset) begin
         end
       end
       FLASH_STATE_READ: begin
-        if (word_count != 0) begin
+        if (!rom_done) begin
           flash_cs    <= 1;
           flash_state <= FLASH_STATE_WAIT;
         end
@@ -883,10 +925,9 @@ always @(posedge clk_28m, posedge rst_28m, posedge reset) begin
       FLASH_STATE_NEXT: begin
         if (clk7n_en) begin
           flash_ram_write <= 0;
-          flash_ram_addr  <= flash_ram_addr + 1;
-          flash_addr      <= flash_addr + 1;
+          flash_ram_addr  <= flash_ram_addr_next[17:0];
           flash_state     <= FLASH_STATE_READ;
-          word_count      <= word_count - 1;
+          if (flash_ram_addr_next[18]) rom_done <= 1'b1;
         end
       end
       default: begin
