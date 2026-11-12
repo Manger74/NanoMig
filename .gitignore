@@ -12,3 +12,5 @@ impl/temp/**
 impl/pnr/**src/tang/nano20k/config_020_*.vh
 src/tang/nano20k/nanomig_020_*.sdc
 src/scripts/.build_020_*.tcl
+minimig.card.lst
+src/rtg/amiga/.minimig.card.tmp.asm

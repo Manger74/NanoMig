@@ -6,13 +6,12 @@
 ; the normal Amiga video and exit.
 ;
 ; Assemble with vasm:  vasmm68k_mot -Fhunkexe -o rtgdemo rtgdemo.asm
-; NOTE: written together with the rtg core but not yet run on real hardware. The lean rtg core
-;       only uses the framebuffer address, the palette and the enable bit, the stride is fixed to 400.
+; The rtg core follows the registers of the MiSTle MiniMig RTG layout (see src/rtg/README.md).
 
         machine 68020
 
 RTG     = $b80100               ; register base, see src/rtg/README.md
-STRIDE  = 400                   ; bytes per source row (the lean rtg core has a fixed 400 byte stride)
+STRIDE  = 400                   ; bytes per source row (multiple of 16)
 WIDTH   = 400
 HEIGHT  = 300
 FBSIZE  = STRIDE*HEIGHT
@@ -78,8 +77,8 @@ start:
         move.w  #STRIDE/16,$16(a0)      ; $116 stride in 16 byte units
         move.w  #0,$18(a0)              ; $118 viewport h start (16 pixel units)
         move.w  #50,$1a(a0)             ; $11a viewport h stop  = 800 pixels
-        move.w  #0,$1c(a0)              ; $11c viewport v start (8 line units)
-        move.w  #75,$1e(a0)             ; $11e viewport v stop  = 600 lines
+        move.w  #0,$1c(a0)              ; $11c viewport v start (16 line units)
+        move.w  #37,$1e(a0)             ; $11e viewport v stop  = 592 lines (296 source rows)
         move.w  #WIDTH/16,$20(a0)       ; $120 visible source line in 16 byte units
         move.w  #1,$10(a0)              ; $110 show the rtg display
 
