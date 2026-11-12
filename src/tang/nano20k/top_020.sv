@@ -1223,13 +1223,31 @@ wire tmds_clock;
 
 wire vreset, vpal, interlace, short_frame;
 
+`ifdef HDMI_VIDEO_MODES
+// The video_analyzer only sends vreset after it has seen a change. Back from an
+// extended mode the hdmi counters restart at an arbitrary point of the Amiga frame
+// and the picture is shifted and wrapped. A change is therefore faked: while an
+// extended mode is selected, the tmds pll re-locks and 255 clocks after that the
+// analyzer sees the inverted screen setting, the switch back makes it resync.
+reg [1:0] vlock_s = 2'b00;
+reg [7:0] resync_cnt = 8'hff;
+always @(posedge clk_28m) begin
+    vlock_s <= { vlock_s[0], video_locked };
+    if (video_mode != 2'b01 || !vlock_s[1]) resync_cnt <= 8'hff;
+    else if (resync_cnt != 8'h00)            resync_cnt <= resync_cnt - 8'd1;
+end
+wire [1:0] va_screen = (resync_cnt != 8'h00) ? ~osd_video_screen : osd_video_screen;
+`else
+wire [1:0] va_screen = osd_video_screen;
+`endif
+
 video_analyzer video_analyzer (
     .clk         ( clk_28m   ),
     .hs          ( hs_n      ),
     .vs          ( vs_n      ),
     .pal         ( vpal      ),
     .short_frame ( short_frame ),
-    .screen      ( osd_video_screen ),
+    .screen      ( va_screen ),
     .interlace   ( interlace ),
     .vreset      ( vreset    )
 );
