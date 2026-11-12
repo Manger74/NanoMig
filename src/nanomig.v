@@ -108,6 +108,16 @@ module nanomig (
    output [15:0] fastram_din,
    output	 fastram_wr,
    input	 fastram_ready
+`ifdef ENABLE_RTG
+   ,
+   // cpu access to the rtg register window ($B8xxxx)
+   output	 rtg_sel,
+   output	 rtg_rd,
+   output	 rtg_wr,
+   output [10:1] rtg_addr,
+   output [15:0] rtg_din,
+   input [15:0]	 rtg_dout
+`endif
 ); 
 `ifndef GATEMATE
  `ifndef LATTICE
@@ -1602,6 +1612,14 @@ minimig minimig
 	.ldata_okk    (                 ), // 9bit
 	.rdata_okk    (                 ), // 9bit
 
+`ifdef ENABLE_RTG
+	.rtg_sel      (rtg_sel          ),
+	.rtg_rd       (rtg_rd           ),
+	.rtg_wr       (rtg_wr           ),
+	.rtg_addr     (rtg_addr         ),
+	.rtg_din      (rtg_din          ),
+	.rtg_dout     (rtg_dout         ),
+`endif
 	//user i/o
 	.cpucfg       (cpucfg ), // CPU config
 

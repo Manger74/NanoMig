@@ -284,6 +284,15 @@ module minimig
 	input	      ide_read,
 	output [15:0] ide_readdata,
 `endif
+`ifdef ENABLE_RTG
+	// cpu access to the rtg register window at $B8xxxx
+	output        rtg_sel,
+	output        rtg_rd,
+	output        rtg_wr,
+	output [10:1] rtg_addr,
+	output [15:0] rtg_din,
+	input  [15:0] rtg_dout,
+`endif
 	//user i/o
 	input [1:0]   cpucfg
 	);
@@ -346,6 +355,7 @@ wire  [2:0] sel_slow;			//slow ram select
 wire        sel_kick;			//rom select
 wire        sel_kick256kmirror;// mirror f8-fb to fc-ff in a1k mode    
 wire        sel_cia;				//CIA address space
+wire        sel_rtg;				//rtg register window
 wire        sel_reg;				//chip register select
 `ifdef ENABLE_RTC
 wire        sel_rtc;
@@ -827,7 +837,7 @@ gary GARY1
 `ifdef ENABLE_TOCCATA
 	.sel_toccata(sel_toccata),
 `endif
-        .sel_rtg(),
+        .sel_rtg(sel_rtg),
 	.reset(reset),
 	.clk(clk),
 	.rom_readonly(rom_readonly),
@@ -1037,6 +1047,14 @@ assign int6_toccata = 1'b0;
    
 //-------------------------------------------------------------------------------------
 
+`ifdef ENABLE_RTG
+assign rtg_sel  = sel_rtg;
+assign rtg_rd   = cpu_rd;
+assign rtg_wr   = cpu_hwr | cpu_lwr;
+assign rtg_addr = cpu_address_out[10:1];
+assign rtg_din  = cpu_data_out;
+`endif
+
 //data multiplexer
 assign cpu_data_in = gary_data_out
 		     | cia_data_out
@@ -1048,6 +1066,9 @@ assign cpu_data_in = gary_data_out
 `endif
 `ifdef ENABLE_RTC
 		     | rtc_out
+`endif
+`ifdef ENABLE_RTG
+		     | rtg_dout
 `endif
 `ifdef ENABLE_TOCCATA
 		     | toccata_out

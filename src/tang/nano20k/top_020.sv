@@ -99,7 +99,9 @@ wire [5:0]	leds;
 wire fdd_step_n;
 assign leds[5] = |sd_wr;
 assign leds[4] = |sd_rd;
+`ifndef RTG_DBG_LED
 assign leds_n = ~leds;
+`endif
 
 
 // ============================== clock generation ===========================
@@ -122,10 +124,16 @@ wire video_locked;
 // 2'b10 = 800x600@60, 2'b11 = 1280x720@60 (see amigaclks.v and hdmi.sv).
 // Until RTG takes over, the extended modes are only selectable for test builds
 // (define RTG_TEST_720P or RTG_TEST_800X600 together with HDMI_VIDEO_MODES).
+`ifdef ENABLE_RTG
+wire       rtg_enable;     // rtg display requested by the cpu (register $B80110)
+`endif
 `ifdef RTG_TEST_720P
 wire [1:0] video_mode = 2'b11;
 `elsif RTG_TEST_800X600
 wire [1:0] video_mode = 2'b10;
+`elsif ENABLE_RTG
+// the rtg driver switches to 800x600 by enabling the rtg display
+wire [1:0] video_mode = rtg_enable ? 2'b10 : 2'b01;
 `else
 wire [1:0] video_mode = 2'b01;
 `endif
@@ -678,6 +686,26 @@ wire [1:0] fastram_be = {fastram_uds,fastram_lds};
 wire fastram_wr;
 wire fastram_ready;
    
+`ifdef ENABLE_RTG
+// cpu access to the rtg registers and the rtg line fetch port of the sdram
+wire        rtg_sel, rtg_rd, rtg_wr;
+wire [10:1] rtg_addr;
+wire [15:0] rtg_din, rtg_dout;
+wire        rtg_mem_req, rtg_mem_dv, rtg_mem_ack;
+wire [18:0] rtg_mem_addr;
+wire [31:0] rtg_mem_data;
+`ifdef RTG_DBG_LED
+reg rtg_dbg_r = 1'b0, rtg_dbg_w = 1'b0;
+always @(posedge clk_28m) begin
+  if (rtg_sel && rtg_rd) rtg_dbg_r <= 1'b1;
+  if (rtg_sel && rtg_wr) rtg_dbg_w <= 1'b1;
+end
+// bisect build: leds[5] = a cpu write to $B8xxxx was seen, leds[4] = a read was seen (both sticky),
+// leds[2] = rtg display enabled
+assign leds_n = ~{ rtg_dbg_w, rtg_dbg_r, leds[3], rtg_enable, leds[1], leds[0] };
+`endif
+`endif
+
 wire [15:0] sdram_dout;
 wire [47:0] chip48;         // upper 48 bits of 64 bit aligned chipram reads (AGA fmode>0)
 wire [47:0] fastram_dout48; // wide read data of the cpu cache port
@@ -797,7 +825,17 @@ nanomig nanomig
 `endif
  .fastram_din(fastram_din),
  .fastram_wr(fastram_wr),
+`ifdef ENABLE_RTG
+ .fastram_ready(fastram_ready),
+ .rtg_sel(rtg_sel),
+ .rtg_rd(rtg_rd),
+ .rtg_wr(rtg_wr),
+ .rtg_addr(rtg_addr),
+ .rtg_din(rtg_din),
+ .rtg_dout(rtg_dout)
+`else
  .fastram_ready(fastram_ready)
+`endif
 );
 
 wire flash_ready;
@@ -985,6 +1023,9 @@ localparam CHIP48_BURST = 0
 `ifdef ENABLE_AGA
     | 1
 `endif
+`ifdef ENABLE_RTG
+    | 1   // the rtg scanout reads 16 byte bursts
+`endif
 `ifdef ENABLE_CACHE
     | 1
 `endif
@@ -1030,7 +1071,18 @@ sdram #(
 	.p2_ds         ( fastram_be      ), // upper/lower data strobe
 	.p2_cs         ( fastram_sel     ), // cpu/chipset requests read/wrie
 	.p2_we         ( fastram_wr      ),  // cpu/chipset requests write
+`ifdef ENABLE_RTG
+	.p2_ack        ( fastram_ready   ),
+
+	// rtg scanout port
+	.rtg_cs        ( rtg_mem_req     ),
+	.rtg_addr      ( rtg_mem_addr    ),
+	.rtg_dout      ( rtg_mem_data    ),
+	.rtg_dv        ( rtg_mem_dv      ),
+	.rtg_ack       ( rtg_mem_ack     )
+`else
 	.p2_ack        ( fastram_ready   )
+`endif
 );
 
 // run the flash a 85MHz. This is only used at power-up to copy kickstart
@@ -1074,13 +1126,22 @@ reg signed [14:0] scaled_audio_right;
 // audio every few seconds. A phase accumulator keeps the fractional part.
 localparam integer AUDIO_RATE = 48000;
 `ifdef HDMI_VIDEO_MODES
+// the video mode is generated in the 28MHz domain, hdmi and audio see it in the pixel domain
+reg [1:0] video_mode_s0 = 2'b01, video_mode_pix = 2'b01;
+always @(posedge clk_pixel) begin
+    video_mode_s0  <= video_mode;
+    video_mode_pix <= video_mode_s0;
+end
+`endif
+
+`ifdef HDMI_VIDEO_MODES
 // pixel clock depends on the video mode: 28.5, 39.9 or 74.1MHz
 localparam integer AUDIO_ACC_WIDTH = 27;
 localparam [AUDIO_ACC_WIDTH-1:0] AUDIO_INC_NATIVE = ((AUDIO_ACC_WIDTH*2)'(AUDIO_RATE) <<< AUDIO_ACC_WIDTH) / 28500000;
 localparam [AUDIO_ACC_WIDTH-1:0] AUDIO_INC_800    = ((AUDIO_ACC_WIDTH*2)'(AUDIO_RATE) <<< AUDIO_ACC_WIDTH) / 39900000;
 localparam [AUDIO_ACC_WIDTH-1:0] AUDIO_INC_720P   = ((AUDIO_ACC_WIDTH*2)'(AUDIO_RATE) <<< AUDIO_ACC_WIDTH) / 74100000;
-wire [AUDIO_ACC_WIDTH-1:0] AUDIO_INC = (video_mode == 2'b11) ? AUDIO_INC_720P :
-                                       (video_mode == 2'b10) ? AUDIO_INC_800 : AUDIO_INC_NATIVE;
+wire [AUDIO_ACC_WIDTH-1:0] AUDIO_INC = (video_mode_pix == 2'b11) ? AUDIO_INC_720P :
+                                       (video_mode_pix == 2'b10) ? AUDIO_INC_800 : AUDIO_INC_NATIVE;
 `else
 localparam integer AUDIO_ACC_WIDTH = $clog2(`PIXEL_CLOCK + AUDIO_RATE);
 
@@ -1173,16 +1234,25 @@ video_analyzer video_analyzer (
     .vreset      ( vreset    )
 );
 
+`ifdef ENABLE_RTG
+wire [10:0] rtg_cx;
+wire  [9:0] rtg_cy;
+wire [23:0] rtg_rgb;
+`endif
+
 `ifdef HDMI_VIDEO_MODES
 // Extended modes run free and are held in reset while the tmds PLL is being
 // re-locked after a mode change. The reset asserts asynchronously because
 // clk_pixel stops while the PLL is in reset, and releases synchronously.
-reg [1:0] hdmi_rst_sync = 2'b11;
+// The release is delayed a few clocks so that the pixel domain copy of the
+// video mode has settled before the hdmi module starts. It is also held while
+// the pll re-locks after switching back to the native video mode.
+reg [3:0] hdmi_rst_sync = 4'hf;
 always @(posedge clk_pixel or negedge video_locked) begin
-    if (!video_locked) hdmi_rst_sync <= 2'b11;
-    else               hdmi_rst_sync <= { hdmi_rst_sync[0], 1'b0 };
+    if (!video_locked) hdmi_rst_sync <= 4'hf;
+    else               hdmi_rst_sync <= { hdmi_rst_sync[2:0], 1'b0 };
 end
-wire hdmi_reset = video_mode[1] ? hdmi_rst_sync[1] : vreset;
+wire hdmi_reset = hdmi_rst_sync[3] | (video_mode_pix[1] ? 1'b0 : vreset);
 `else
 wire hdmi_reset = vreset;
 `endif
@@ -1201,7 +1271,7 @@ hdmi #(
   .tmds_clock(tmds_clock),
 
 `ifdef HDMI_VIDEO_MODES
-  .video_mode(video_mode),
+  .video_mode(video_mode_pix),
 `endif
   .pal_mode(vpal),
   .short_frame ( short_frame ),
@@ -1209,8 +1279,47 @@ hdmi #(
   .interlace(interlace),
   .reset(hdmi_reset),    // signal to synchronize HDMI
 
+`ifdef ENABLE_RTG
+  .rgb_rtg(rtg_rgb),
+  .rtg_cx(rtg_cx),
+  .rtg_cy(rtg_cy),
+`endif
   .rgb( { video_red, 2'b00, video_green, 2'b00, video_blue, 2'b00 } )
 );
+
+`ifdef ENABLE_RTG
+// RTG scanout. The 800x600 profile is what the video mode logic selects when
+// the rtg display is enabled.
+rtg_video #(
+  .H_TOTAL(1056), .H_ACTIVE(800), .V_TOTAL(628), .V_ACTIVE(600)
+) rtg_video (
+  .clk_bus   ( clk_28m     ),
+  .reset_bus ( rst_28m     ),
+`ifdef RTG_DBG_NOBUS
+  .reg_sel   ( 1'b0        ),   // bisect build: no cpu access to the rtg registers
+`else
+  .reg_sel   ( rtg_sel     ),
+`endif
+  .reg_rd    ( rtg_rd      ),
+  .reg_wr    ( rtg_wr      ),
+  .reg_addr  ( rtg_addr    ),
+  .reg_din   ( rtg_din     ),
+  .reg_dout  ( rtg_dout    ),
+  .rtg_enable( rtg_enable  ),
+
+  .clk_mem   ( clk_85m     ),
+  .mem_req   ( rtg_mem_req ),
+  .mem_addr  ( rtg_mem_addr),
+  .mem_data  ( rtg_mem_data),
+  .mem_dv    ( rtg_mem_dv  ),
+  .mem_ack   ( rtg_mem_ack ),
+
+  .clk_pix   ( clk_pixel   ),
+  .cx        ( rtg_cx      ),
+  .cy        ( rtg_cy      ),
+  .rgb       ( rtg_rgb     )
+);
+`endif
 
 // differential output
 ELVDS_OBUF tmds_bufds [3:0] (

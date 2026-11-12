@@ -56,6 +56,11 @@ module hdmi
     // synchronous reset back to 0,0
     input logic 		      reset,
     input logic [23:0] 		      rgb, 
+`ifdef ENABLE_RTG
+    input logic [23:0]                rgb_rtg,     // picture of the extended video modes
+    output logic [10:0]               rtg_cx,      // current position, for the rtg scanout
+    output logic [9:0]                rtg_cy,
+`endif
     input logic [AUDIO_BIT_WIDTH-1:0] audio_sample_word [1:0],
 
     // These outputs go to your HDMI port
@@ -128,6 +133,10 @@ assign invert = ext_mode ? 2'b00 : 2'b11;
 
 reg [10:0] cx;
 reg [9:0] cy;
+`ifdef ENABLE_RTG
+assign rtg_cx = cx;
+assign rtg_cy = cy;
+`endif
 
 always_comb begin
     hsync <= invert[0] ^ (cx >= screen_width + hsync_pulse_start && cx < screen_width + hsync_pulse_start + hsync_pulse_size);
@@ -186,6 +195,9 @@ wire ext_border = cx == 11'd0 || cx == screen_width - 1'b1 || cy == 10'd0 || cy 
 wire ext_grid   = cx[5:0] == 6'd0 || cy[5:0] == 6'd0;
 wire [23:0] rgb_ext_test = ext_border ? 24'hffffff : ext_grid ? 24'h808080 : { cx[7:0], cy[7:0], 8'h40 };
 wire [23:0] rgb_in = ext_mode ? rgb_ext_test : rgb;
+`elsif ENABLE_RTG
+// the rtg scanout delivers the picture of the extended modes
+wire [23:0] rgb_in = ext_mode ? rgb_rtg : rgb;
 `else
 wire [23:0] rgb_in = rgb;
 `endif

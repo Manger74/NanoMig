@@ -6,6 +6,9 @@
 #   gw_sh scripts/build_020_video.tcl vmodes       native video, video mode logic only
 #   gw_sh scripts/build_020_video.tcl test800x600  free running 800x600 test pattern
 #   gw_sh scripts/build_020_video.tcl test720p     free running 1280x720 test pattern
+#   gw_sh scripts/build_020_video.tcl rtg          RTG scanout (400x300 8 bit shown on 800x600)
+#   gw_sh scripts/build_020_video.tcl rtgled       rtg, leds show the rtg window accesses (bisect)
+#   gw_sh scripts/build_020_video.tcl rtgdbg       rtg, cpu register window disconnected (bisect)
 #
 # The defines are written to a config file that is added before top_020.sv, the sdc
 # file is derived from nanomig_020.sdc. The bitstream gets the variant as suffix.
@@ -16,8 +19,11 @@ switch -- $variant {
     vmodes      { set defines {HDMI_VIDEO_MODES};                                                  set period "7"   ; set wave "{0 3}"   }
     test800x600 { set defines {HDMI_VIDEO_MODES HDMI_EXT_TEST_PATTERN RTG_TEST_800X600};           set period "5.0" ; set wave "{0 2.5}" }
     test720p    { set defines {HDMI_VIDEO_MODES HDMI_EXT_TEST_PATTERN RTG_TEST_720P};              set period "2.7" ; set wave "{0 1.3}" }
+    rtg         { set defines {HDMI_VIDEO_MODES ENABLE_RTG};                                       set period "5.0" ; set wave "{0 2.5}" }
+    rtgled      { set defines {HDMI_VIDEO_MODES ENABLE_RTG RTG_DBG_LED};                           set period "5.0" ; set wave "{0 2.5}" }
+    rtgdbg      { set defines {HDMI_VIDEO_MODES ENABLE_RTG RTG_DBG_NOBUS};                         set period "5.0" ; set wave "{0 2.5}" }
     default {
-        puts "Usage: gw_sh scripts/build_020_video.tcl <vmodes|test800x600|test720p>"
+        puts "Usage: gw_sh scripts/build_020_video.tcl <vmodes|test800x600|test720p|rtg|rtgled|rtgdbg>"
         exit 1
     }
 }
@@ -39,6 +45,11 @@ set script [string map [list \
     "add_file tang/nano20k/top_020.sv" "add_file -type verilog $cfg\nadd_file tang/nano20k/top_020.sv" \
     "add_file tang/nano20k/nanomig_020.sdc" "add_file $sdc_name" \
     "nanomig_20" "nanomig_20_$variant"] $script]
+
+# the rtg scanout is an additional source file
+if {[lsearch -exact $defines "ENABLE_RTG"] >= 0} {
+    set script [string map [list "add_file nanomig.v" "add_file nanomig.v\nadd_file rtg/rtg_video.sv"] $script]
+}
 
 set tmp "scripts/.build_020_$variant.tcl"
 set f [open $tmp w]; puts -nonewline $f $script; close $f
