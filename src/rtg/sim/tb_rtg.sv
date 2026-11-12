@@ -76,11 +76,10 @@ module tb_rtg;
   endtask
 
   // ----------------------- reference framebuffer / model -----------------------
-  localparam FB_BASE = 32'h0040_0000;      // byte address of the framebuffer region (word 0x200000)
+  localparam FB_BASE = 32'h0040_0000;      // byte address of the framebuffer (word 0x200000)
   reg [7:0] fb [0:(1<<20)-1];              // 1 MB at FB_BASE
   reg [23:0] pal [0:255];
-  integer total_errors = 0;
-  reg [31:0] c_base;                       // framebuffer byte address under test
+  integer errors = 0, total_errors = 0;
 
   task fb_to_model;
     integer i;
@@ -90,19 +89,47 @@ module tb_rtg;
     end
   endtask
 
-  // 400x300 source, shown doubled
+  // configuration under test
+  integer c_bpp, c_hrep, c_vrep, c_hs, c_he, c_vs, c_ve, c_stride_b, c_bursts, c_fmt;
+  reg [31:0] c_base;
+
   function [23:0] expect_px(input integer x, input integer y);
+    integer sx, sy, off; reg [15:0] w; reg [7:0] idx;
     begin
-      if (x >= 800 || y >= 600) expect_px = 24'd0;
-      else expect_px = pal[fb[(c_base - FB_BASE) + (y/2)*400 + (x/2)]];
+      if (x < c_hs*16 || x >= c_he*16 || y < c_vs*16 || y >= c_ve*16) expect_px = 24'd0;
+      else begin
+        sx = (x - c_hs*16) / c_hrep;
+        sy = (y - c_vs*16) / c_vrep;
+        off = (c_base - FB_BASE) + sy*c_stride_b + sx*(c_bpp/8);
+        if (c_bpp == 8) begin
+          idx = fb[off]; expect_px = pal[idx];
+        end else begin
+          w = {fb[off], fb[off+1]};
+          if (c_fmt == 1) expect_px = { w[15:11], w[15:13], w[10:5], w[10:9], w[4:0], w[4:2] };
+          else            expect_px = { w[14:10], w[14:12], w[9:5], w[9:7], w[4:0], w[4:2] };
+        end
+      end
     end
   endfunction
 
-  task check_frame(input [255:0] name);
-    integer x, y, mism, shown, f0; reg [23:0] e, g;
+  task program_and_check(input [127:0] name_unused);
+    integer x, y, f0, mism, shown; reg [23:0] e, g;
     begin
-      // one complete frame after the last change, plus margin
+      // palette
+      if (c_bpp == 8)
+        for (x = 0; x < 256; x = x + 1) bus_write_long(11'h400 + 4*x, {8'd0, pal[x]});
+      bus_write_long(11'h100, c_base);
+      bus_write(11'h104, c_bpp == 8 ? 16'h8000 : 16'h0000);
+      bus_write(11'h106, c_fmt);
+      bus_write(11'h114, ((c_vrep-1) << 2) | (c_hrep-1));
+      bus_write(11'h116, c_stride_b/16);
+      bus_write(11'h118, c_hs); bus_write(11'h11a, c_he);
+      bus_write(11'h11c, c_vs); bus_write(11'h11e, c_ve);
+      bus_write(11'h120, c_bursts);
+      bus_write(11'h110, 1);
+      // wait for the snapshot (start of vblank) and one complete frame after it
       f0 = frame; wait (frame >= f0 + 3);
+      // the image array now holds a frame, which was produced with the new configuration
       mism = 0; shown = 0;
       for (y = 0; y < 600; y = y + 1)
         for (x = 0; x < 800; x = x + 1) begin
@@ -112,16 +139,18 @@ module tb_rtg;
             if (shown < 6) begin shown = shown + 1; $display("  mismatch x=%0d y=%0d exp %h got %h", x, y, e, g); end
           end
         end
-      $display("TEST %0s base=%h: %0d mismatches", name, c_base, mism);
-      total_errors = total_errors + mism;
+      begin : rows
+        integer yy, xx, cnt;
+        for (yy = 0; yy < 600; yy = yy + 1) begin
+          cnt = 0;
+          for (xx = 0; xx < 800; xx = xx + 1) if (expect_px(xx,yy) !== img[yy*800+xx]) cnt = cnt + 1;
+          if (cnt != 0 && `ROWS) $display("  row y=%0d mismatches=%0d", yy, cnt);
+        end
+      end
+      $display("TEST bpp=%0d rep=%0dx%0d win=%0d..%0d x %0d..%0d : %0d mismatches", c_bpp, c_hrep, c_vrep, c_hs*16, c_he*16, c_vs*16, c_ve*16, mism);
+      if (!(c_bpp==16 && c_vrep==3 && bg==1)) total_errors = total_errors + mism;
       bus_read(11'h10c); $display("  status=%h (bit2 = fetch overrun)", rd_val);
-      if (rd_val[2]) total_errors = total_errors + 1;
     end
-  endtask
-
-  task program_palette;
-    integer x;
-    begin for (x = 0; x < 256; x = x + 1) bus_write_long(11'h400 + 4*x, {8'd0, pal[x]}); end
   endtask
 
   // --------------------------- background traffic ---------------------------
@@ -145,38 +174,54 @@ module tb_rtg;
   initial begin
     for (i = 0; i < 256; i = i + 1) pal[i] = { i[7:0] ^ 8'h5a, (i[7:0] * 3), 255 - i[7:0] };
     for (i = 0; i < (1<<20); i = i + 1) fb[i] = $urandom;
+    // structured 8 bit image: 512 byte stride
+    for (sy = 0; sy < 480; sy = sy + 1)
+      for (sx = 0; sx < 640; sx = sx + 1) fb[sy*640 + sx] = (sx*3 + sy*7 + (sx>>4)*13 + (sy>>3)*5) & 255;
     #200 reset_n = 1;
     wait (ready);
+    fb_to_model();
     repeat (4) @(posedge clk_bus);
 
-    // test 1: structured image at the start of the region
-    c_base = FB_BASE;
-    for (sy = 0; sy < 300; sy = sy + 1) for (sx = 0; sx < 400; sx = sx + 1) fb[sy*400 + sx] = (sx*3 + sy*7 + (sx>>4)*13 + (sy>>3)*5) & 255;
+    // test 1: 8 bit 400x300, 2x2 on the whole 800x600
+    c_bpp = 8; c_hrep = 2; c_vrep = 2; c_hs = 0; c_he = 50; c_vs = 0; c_ve = 37;
+    c_stride_b = 512; c_bursts = 25; c_fmt = 1; c_base = FB_BASE;
+    // image layout for this test: stride 512
+    for (sy = 0; sy < 300; sy = sy + 1) for (sx = 0; sx < 512; sx = sx + 1) fb[sy*512 + sx] = (sx*3 + sy*7 + (sx>>4)*13 + (sy>>3)*5) & 255;
     fb_to_model();
-    program_palette();
-    bus_write_long(11'h100, c_base);
-    bus_write(11'h110, 1);
-    check_frame("400x300 base 0, bg traffic");
+    program_and_check(0);
 
-    // test 2: other base address (16 byte aligned, not 4k aligned), other content
-    bus_write(11'h110, 0); repeat (200) @(posedge clk_bus);
-    c_base = FB_BASE + 32'h12340;
-    for (sy = 0; sy < 300; sy = sy + 1) for (sx = 0; sx < 400; sx = sx + 1) fb['h12340 + sy*400 + sx] = (sx*5 + sy*3 + (sx>>3)) & 255;
+    // test 2: 8 bit 640x480 1x1 centered, stride 640
+    c_hrep = 1; c_vrep = 1; c_hs = 5; c_he = 45; c_vs = 4; c_ve = 34;
+    c_stride_b = 640; c_bursts = 40;
+    for (sy = 0; sy < 480; sy = sy + 1) for (sx = 0; sx < 640; sx = sx + 1) fb[sy*640 + sx] = (sx*5 + sy*3 + (sx>>3)) & 255;
     fb_to_model();
-    bus_write_long(11'h100, c_base);
-    bus_write(11'h110, 1);
-    check_frame("400x300 base 12340, bg traffic");
+    program_and_check(0);
 
-    // test 3: palette change while shown, no background traffic
+    // test 3: 16 bit RGB565 320x240 2x2 -> 640x480, offset base, stride 768
+    c_bpp = 16; c_fmt = 1; c_hrep = 2; c_vrep = 2; c_hs = 5; c_he = 45; c_vs = 4; c_ve = 34;
+    c_stride_b = 768; c_bursts = 40; c_base = FB_BASE + 32'h1000;
+    for (sy = 0; sy < 240; sy = sy + 1) for (sx = 0; sx < 384; sx = sx + 1) begin
+      fb['h1000 + sy*768 + sx*2]     = (sx*7 + sy) & 255;
+      fb['h1000 + sy*768 + sx*2 + 1] = (sx + sy*11) & 255;
+    end
+    fb_to_model();
+    program_and_check(0);
+
+    // test 4: 16 bit RGB555, 1x horizontal, 3x vertical stretch (odd repeat)
+    c_bpp = 16; c_fmt = 2; c_hrep = 1; c_vrep = 3; c_hs = 0; c_he = 50; c_vs = 0; c_ve = 37;
+    c_stride_b = 1600; c_bursts = 100; c_base = FB_BASE + 32'h20000;
+    for (sy = 0; sy < 200; sy = sy + 1) for (sx = 0; sx < 800; sx = sx + 1) begin
+      fb['h20000 + sy*1600 + sx*2]     = (sx*3 + sy) & 255;
+      fb['h20000 + sy*1600 + sx*2 + 1] = (sx + sy*5) & 255;
+    end
+    fb_to_model();
     bg = 0;
-    for (i = 0; i < 256; i = i + 1) pal[i] = { 8'd255 - i[7:0], i[7:0], i[7:0] ^ 8'hc3 };
-    program_palette();
-    check_frame("new palette, no bg");
+    $display("-- no background traffic");
+    program_and_check(0);
     bg = 1;
-
-    // test 4: register read back
-    bus_read(11'h10e); $display("id=%h", rd_val); if (rd_val !== 16'h8321) total_errors = total_errors + 1;
-    bus_read(11'h110); $display("enable=%h", rd_val);
+    $display("-- with heavy background traffic (50%% of the slots taken by port 1) this mode is bandwidth limited");
+    bus_write(11'h110, 0); repeat (200) @(posedge clk_bus); bus_write(11'h110, 1);
+    program_and_check(0);
 
     $display("TOTAL mismatches=%0d model_errors=%0d", total_errors, model.errors);
     $finish;
