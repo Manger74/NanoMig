@@ -6,7 +6,8 @@
 ; the normal Amiga video and exit.
 ;
 ; Assemble with vasm:  vasmm68k_mot -Fhunkexe -o rtgdemo rtgdemo.asm
-; NOTE: written together with the rtg core but not yet assembled/run on real hardware.
+; NOTE: written together with the rtg core but not yet run on real hardware. The lean rtg core
+;       only uses the framebuffer address, the palette and the enable bit, the stride is fixed to 400.
 
         machine 68020
 
@@ -37,8 +38,7 @@ start:
         ; xor pattern
         moveq   #0,d2                   ; y
 .ly:    move.l  d2,d4
-        lsl.l   #8,d4
-        add.l   d4,d4                   ; y*512
+        mulu.w  #STRIDE,d4              ; y*400
         lea     0(a2,d4.l),a3
         moveq   #0,d3                   ; x
 .lx:    move.l  d3,d4
