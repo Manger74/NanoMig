@@ -171,6 +171,16 @@ wire [15:0] ide1_readdata;
 wire        ide1_intreq, ide1_drq, ide1_nodata;
 
 `ifndef DISABLE_IDE
+`ifdef DISABLE_IDE1
+// IDE port 1 removed (saves its 16kB buffer). Behave exactly like an ide1
+// without drive: reads return ffffffff, no irq/drq/no_data, request idle.
+assign ide1_data     = 32'hffffffff;
+assign ide1_readdata = 16'h0000;
+assign ide1_intreq   = 1'b0;
+assign ide1_drq      = 1'b0;
+assign ide1_nodata   = 1'b0;
+assign ide_req[5:3]  = 3'b110;
+`else
 ide ide1
 (
 	.clk(clk),
@@ -198,6 +208,7 @@ ide ide1
 	.mgmt_read(ide_read & ide_address[4]),
 	.mgmt_readdata(ide1_readdata)
 );
+`endif // DISABLE_IDE1
 `endif
    
 wire   intreq  = ide0_intreq | ide1_intreq;
