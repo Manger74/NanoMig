@@ -61,6 +61,14 @@ module hdmi
     output logic [10:0]               rtg_cx,      // current position, for the rtg scanout
     output logic [9:0]                rtg_cy,
 `endif
+`ifdef HDMI_OSD
+    // MCU interface of the OSD (see osd_hdmi.v), in the osd_clk domain
+    input logic                       osd_clk,
+    input logic                       osd_reset,
+    input logic                       osd_strobe,
+    input logic                       osd_start,
+    input logic [7:0]                 osd_data,
+`endif
     input logic [AUDIO_BIT_WIDTH-1:0] audio_sample_word [1:0],
 
     // These outputs go to your HDMI port
@@ -194,12 +202,33 @@ logic [11:0] data_island_data = 12'd0;
 wire ext_border = cx == 11'd0 || cx == screen_width - 1'b1 || cy == 10'd0 || cy == screen_height - 1'b1;
 wire ext_grid   = cx[5:0] == 6'd0 || cy[5:0] == 6'd0;
 wire [23:0] rgb_ext_test = ext_border ? 24'hffffff : ext_grid ? 24'h808080 : { cx[7:0], cy[7:0], 8'h40 };
-wire [23:0] rgb_in = ext_mode ? rgb_ext_test : rgb;
+wire [23:0] rgb_src = ext_mode ? rgb_ext_test : rgb;
 `elsif ENABLE_RTG
 // the rtg scanout delivers the picture of the extended modes
-wire [23:0] rgb_in = ext_mode ? rgb_rtg : rgb;
+wire [23:0] rgb_src = ext_mode ? rgb_rtg : rgb;
 `else
-wire [23:0] rgb_in = rgb;
+wire [23:0] rgb_src = rgb;
+`endif
+
+`ifdef HDMI_OSD
+// the OSD is mixed into whatever picture source is selected
+wire [23:0] rgb_in;
+osd_hdmi osd_hdmi (
+    .clk_wr         ( osd_clk       ),
+    .reset          ( osd_reset     ),
+    .data_in_strobe ( osd_strobe    ),
+    .data_in_start  ( osd_start     ),
+    .data_in        ( osd_data      ),
+    .clk            ( clk_pixel     ),
+    .cx             ( cx            ),
+    .cy             ( cy            ),
+    .screen_width   ( screen_width  ),
+    .screen_height  ( screen_height ),
+    .rgb_in         ( rgb_src       ),
+    .rgb_out        ( rgb_in        )
+);
+`else
+wire [23:0] rgb_in = rgb_src;
 `endif
 
 `ifdef HDMI_TEST_PATTERN

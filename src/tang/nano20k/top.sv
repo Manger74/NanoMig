@@ -25,6 +25,7 @@
 // `define ENABLE_PLIP // virtual parallel port: network via plipbox.device and the FPGA Companion, see doc/PLIP.md
 // `define PLIP_LITE   // PLIP without statistics and loopback test, saves logic (needed for the 020 build)
 `define HQ_DRIVE_SOUNDS // drive sounds: with = tone bursts (drive_sounds_hq), without = single click (drive_sounds_min, fewer LEs)
+`define HDMI_OSD      // OSD mixed in by the hdmi module (native and rtg video modes) instead of osd_u8g2
 
 module top(
   input			clk,
@@ -581,6 +582,12 @@ wire [5:0] video_red;
 wire [5:0] video_green;
 wire [5:0] video_blue;   
 
+`ifdef HDMI_OSD
+// the OSD is mixed in by the hdmi module
+assign video_red   = { red,   2'b00 };
+assign video_green = { green, 2'b00 };
+assign video_blue  = { blue,  2'b00 };
+`else
 osd_u8g2 osd_u8g2 (
         .clk(clk_28m),
         .reset(rst_28m),
@@ -599,7 +606,8 @@ osd_u8g2 osd_u8g2 (
         .r_out(video_red),
         .g_out(video_green),
         .b_out(video_blue)
-);   
+);
+`endif   
 
 /* ---------------------- Minimig chipset ----------------------- */
 
@@ -1169,6 +1177,13 @@ hdmi #(
   .interlace(interlace),
   .reset(vreset),    // signal to synchronize HDMI
 
+`ifdef HDMI_OSD
+  .osd_clk(clk_28m),
+  .osd_reset(rst_28m),
+  .osd_strobe(mcu_osd_strobe),
+  .osd_start(mcu_start),
+  .osd_data(mcu_data_out),
+`endif
   .rgb( { video_red, 2'b00, video_green, 2'b00, video_blue, 2'b00 } )
 );
 
