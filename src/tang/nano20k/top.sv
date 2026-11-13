@@ -20,7 +20,6 @@
 // `define DISABLE_IDE1 // only remove the second IDE port (ide1), frees its 16kB buffer (8 BRAM)
 // `define NO_WS2812   // drop the rgb status led to make room for cache + ide
 // `define DENISE_EBR   // block ram based bitplane and sprite buffers, saves logic
-// `define DENISE_SPRITE_BRAM 6 // with DENISE_EBR: buffers of sprites 0-5 in block ram (1 BSRAM each, saves 8 RAM16 each)
 `define DISABLE_ROM_LOADER // drop the rom loader to make room 
 // `define ENABLE_AT_MODEM // serial port <-> virtual AT modem of the FPGA Companion (replaces the midi_in pin)
 `define ENABLE_PLIP // virtual parallel port: network via plipbox.device and the FPGA Companion, see doc/PLIP.md

@@ -29,15 +29,7 @@
 `ifdef DENISE_EBR
 // EBR implementation: block RAM buffers and narrow shifters.
 
-`ifndef DENISE_SPRITE_BRAM
-`define DENISE_SPRITE_BRAM 0
-`endif
-
-module denise_sprites #(
-  // number of sprites (0..8, starting with sprite 0) whose buffer uses one
-  // block ram each instead of 8 RAM16, set by `define DENISE_SPRITE_BRAM
-  parameter SPRITE_BRAM = `DENISE_SPRITE_BRAM
-)
+module denise_sprites
 (
   input   clk,          // 28MHz clock
   input clk7_en,
@@ -142,7 +134,7 @@ always @ (*) begin
 end
 
 // instantiate sprite 0
-denise_sprites_shifter #(.BRAM(SPRITE_BRAM > 0)) sps0
+denise_sprites_shifter sps0
 (
   .clk(clk),
   .clk7_en(clk7_en),
@@ -160,7 +152,7 @@ denise_sprites_shifter #(.BRAM(SPRITE_BRAM > 0)) sps0
 );
 
 // instantiate sprite 1
-denise_sprites_shifter #(.BRAM(SPRITE_BRAM > 1)) sps1
+denise_sprites_shifter sps1
 (
   .clk(clk),
   .clk7_en(clk7_en),
@@ -178,7 +170,7 @@ denise_sprites_shifter #(.BRAM(SPRITE_BRAM > 1)) sps1
 );
 
 // instantiate sprite 2
-denise_sprites_shifter #(.BRAM(SPRITE_BRAM > 2)) sps2
+denise_sprites_shifter sps2
 (
   .clk(clk),
   .clk7_en(clk7_en),
@@ -196,7 +188,7 @@ denise_sprites_shifter #(.BRAM(SPRITE_BRAM > 2)) sps2
 );
 
 // instantiate sprite 3
-denise_sprites_shifter #(.BRAM(SPRITE_BRAM > 3)) sps3
+denise_sprites_shifter sps3
 (
   .clk(clk),
   .clk7_en(clk7_en),
@@ -214,7 +206,7 @@ denise_sprites_shifter #(.BRAM(SPRITE_BRAM > 3)) sps3
 );
 
 // instantiate sprite 4
-denise_sprites_shifter #(.BRAM(SPRITE_BRAM > 4)) sps4
+denise_sprites_shifter sps4
 (
   .clk(clk),
   .clk7_en(clk7_en),
@@ -232,7 +224,7 @@ denise_sprites_shifter #(.BRAM(SPRITE_BRAM > 4)) sps4
 );
 
 // instantiate sprite 5
-denise_sprites_shifter #(.BRAM(SPRITE_BRAM > 5)) sps5
+denise_sprites_shifter sps5
 (
   .clk(clk),
   .clk7_en(clk7_en),
@@ -250,7 +242,7 @@ denise_sprites_shifter #(.BRAM(SPRITE_BRAM > 5)) sps5
 );
 
 // instantiate sprite 6
-denise_sprites_shifter #(.BRAM(SPRITE_BRAM > 6)) sps6
+denise_sprites_shifter sps6
 (
   .clk(clk),
   .clk7_en(clk7_en),
@@ -268,7 +260,7 @@ denise_sprites_shifter #(.BRAM(SPRITE_BRAM > 6)) sps6
 );
 
 // instantiate sprite 7
-denise_sprites_shifter #(.BRAM(SPRITE_BRAM > 7)) sps7
+denise_sprites_shifter sps7
 (
   .clk(clk),
   .clk7_en(clk7_en),

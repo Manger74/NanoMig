@@ -14,9 +14,8 @@
 `ifdef DENISE_EBR
 // EBR implementation: block RAM buffers and narrow shifters.
 
-module denise_sprites_shifter #(
-  parameter BRAM = 0   // sprite buffer in block ram, see sprite_ram.v
-) (
+module denise_sprites_shifter
+(
   input  clk,          // 28MHz clock
   input  clk7_en,
   input  reset,            // reset
@@ -92,7 +91,7 @@ reg        bankwr_buf;
 reg [1:0] bankrd_idx;
 reg       bankrd_buf;
 
-sprite_ram #(.BRAM(BRAM)) ram (
+sprite_ram ram (
   .clk(clk),
   .wea(ram_wea),
   .addra(ram_addra),
