@@ -24,6 +24,8 @@
 // `define ENABLE_AT_MODEM // serial port <-> virtual AT modem of the FPGA Companion (replaces the midi_in pin)
 // `define ENABLE_PLIP // virtual parallel port: network via plipbox.device and the FPGA Companion, see doc/PLIP.md
 // `define PLIP_LITE   // PLIP without statistics and loopback test, saves logic (needed for the 020 build)
+`define ENABLE_A314 // A314 clockport interface at $D80001: network via a314eth.device and the FPGA Companion, see doc/A314.md (4 BSRAM)
+`define A314_FAST   // with ENABLE_A314 and only the TG68K: the CPU accesses the A314 registers directly, not through the chip bus (~1.4 us -> 1 clock per byte)
 // `define HQ_DRIVE_SOUNDS // drive sounds: with = tone bursts (drive_sounds_hq), without = single click (drive_sounds_min, fewer LEs)
 `define HDMI_OSD      // OSD mixed in by the hdmi module (native and rtg video modes) instead of osd_u8g2
 
@@ -274,6 +276,18 @@ wire       mcu_sys_strobe;        // mcu message byte valid for sysctrl
 wire       mcu_hid_strobe;        // -"- hid
 wire       mcu_osd_strobe;        // -"- osd
 wire       mcu_sdc_strobe;        // -"- sdc
+`ifdef ENABLE_PLIP
+wire       mcu_net_strobe;        // -"- network (virtual parallel port)
+wire [7:0] net_data_out;
+wire       net_int;
+`endif
+`ifdef ENABLE_A314
+wire       mcu_a314_strobe;       // -"- A314 clockport interface
+wire [7:0] a314_data_out;
+wire       a314_int;
+`else
+wire       a314_int = 1'b0;
+`endif
 wire       mcu_start;             // first byte of MCU message
 
 wire [7:0] mcu_data_out;  
@@ -298,6 +312,14 @@ mcu_spi mcu (
      .mcu_hid_strobe(mcu_hid_strobe),
      .mcu_osd_strobe(mcu_osd_strobe),
      .mcu_sdc_strobe(mcu_sdc_strobe),
+`ifdef ENABLE_PLIP
+     .mcu_net_strobe(mcu_net_strobe),
+     .mcu_net_din(net_data_out),
+`endif
+`ifdef ENABLE_A314
+     .mcu_a314_strobe(mcu_a314_strobe),
+     .mcu_a314_din(a314_data_out),
+`endif
      .mcu_start(mcu_start),
      .mcu_dout(mcu_data_out),
      .mcu_sys_din(sys_data_out),
@@ -574,7 +596,11 @@ sysctrl #(
 	.system_drive_sounds(osd_drive_sounds),
 
         .int_out_n(spi_intn),
-        .int_in( { 4'b0000, sdc_int, 1'b0, hid_int, 1'b0 }),
+`ifdef ENABLE_PLIP
+        .int_in( { 1'b0, a314_int, net_int, 1'b0, sdc_int, 1'b0, hid_int, 1'b0 }),
+`else
+        .int_in( { 1'b0, a314_int, 2'b00, sdc_int, 1'b0, hid_int, 1'b0 }),
+`endif
         .int_ack( int_ack ),
 
 `ifdef ENABLE_AT_MODEM
@@ -783,6 +809,24 @@ nanomig nanomig
  .serial_rx_available(serial_rx_available),
  .serial_rx_strobe(serial_rx_strobe),
  .serial_rx_data(serial_rx_data),
+`endif
+`ifdef ENABLE_PLIP
+ // virtual parallel port (plipbox), frames via the MCU (SPI target 5)
+ .net_strobe(mcu_net_strobe),
+ .net_start(mcu_start),
+ .net_din(mcu_data_out),
+ .net_dout(net_data_out),
+ .net_irq(net_int),
+ .net_iack(int_ack[5]),
+`endif
+`ifdef ENABLE_A314
+ // A314 clockport interface, memory and interrupt bits via the MCU (SPI target 6)
+ .a314_strobe(mcu_a314_strobe),
+ .a314_start(mcu_start),
+ .a314_din(mcu_data_out),
+ .a314_dout(a314_data_out),
+ .a314_irq(a314_int),
+ .a314_iack(int_ack[6]),
 `endif
  
  // keyboard & mouse				 

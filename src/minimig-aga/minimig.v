@@ -200,6 +200,44 @@ module minimig
 	input	      dsr, // rs232 Data Set Ready
 	input	      cd, // rs232 Carrier Detect
 	input	      ri, // rs232 Ring Indicator
+`ifdef ENABLE_PLIP
+	// virtual parallel port (plipbox.device peer), host side e.g. SPI companion
+	input	      plip_en,
+	input	      plip_loop,         // $FFFD frames are echoed without host
+	input	      plip_h_we,
+	input [10:0]  plip_h_waddr,
+	input [7:0]   plip_h_wdata,
+	input	      plip_h_commit,
+	input [10:0]  plip_h_len,
+	output	      plip_tx_valid,
+	input [10:0]  plip_h_raddr,
+	output [7:0]  plip_h_rdata,
+	output	      plip_rx_valid,
+	output [10:0] plip_rx_len,
+	input	      plip_h_release,
+	output [31:0] plip_stat_rx,
+	output [31:0] plip_stat_tx,
+	output [31:0] plip_rt_clks,
+`endif
+`ifdef ENABLE_A314
+	// A314 clockport interface ($D80001), host side e.g. SPI companion (a314_host)
+	input [12:0]  a314_h_addr,
+	input	      a314_h_we,
+	input [7:0]   a314_h_wdata,
+	output [7:0]  a314_h_rdata,
+	input	      a314_h_irq_we,
+	input [7:0]   a314_h_irq_data,
+	output	      a314_pi_irq,
+`ifdef A314_FAST
+	// Amiga side directly from the cpu wrapper (TG68K), not through the chip bus
+	input	      a314_f_sel,
+	input	      a314_f_end,
+	input	      a314_f_we,
+	input [1:0]   a314_f_reg,
+	input [7:0]   a314_f_din,
+	output [7:0]  a314_f_dout,
+`endif
+`endif
 
 	//I/O
 	input [15:0]  _joy1, // joystick 1 [fire2,fire,up,down,left,right] (default mouse port)
@@ -337,6 +375,7 @@ wire        ram_hwr;				//ram high byte write enable
 wire        ram_lwr;				//ram low byte write enable 
 wire        cpu_rd; 				//cpu read enable
 wire        rd_cyc;
+wire        cpu_cyc;				//cpu bus cycle is going on (read or write)
 wire        cpu_hwr;				//cpu high byte write enable
 wire        cpu_lwr;				//cpu low byte write enable
 
@@ -357,6 +396,9 @@ wire        sel_kick256kmirror;// mirror f8-fb to fc-ff in a1k mode
 wire        sel_cia;				//CIA address space
 wire        sel_rtg;				//rtg register window
 wire        sel_reg;				//chip register select
+`ifdef ENABLE_A314
+wire        sel_a314;			//select A314 clockport registers ($D8xxxx)
+`endif
 `ifdef ENABLE_RTC
 wire        sel_rtc;
 `endif
@@ -369,6 +411,7 @@ wire        int2;					//intterrupt 2
 wire        int3;					//intterrupt 3 
 wire        int6;					//intterrupt 6
 wire        int6_toccata;
+wire        int6_a314;
 wire        freeze;				//Action Replay freeze button
 wire        _fire0;				//joystick 1 fire signal to cia A
 wire        _fire1;				//joystick 2 fire signal to cia A
@@ -530,7 +573,7 @@ paula PAULA1
 	.int2(int2), 
  `endif
 	.int3(int3),
-	.int6(int6 | int6_toccata),
+	.int6(int6 | int6_toccata | int6_a314),
 	._ipl(_iplx),
 	.audio_dmal(audio_dmal),
 	.audio_dmas(audio_dmas),
@@ -622,6 +665,51 @@ denise DENISE1
 	.shres(shres)
 );
 
+`ifdef ENABLE_PLIP
+// ---- virtual parallel port: peer of plipbox.device on CIA-A PRB / CIA-B PRA
+wire [2:1] plip_pra, plip_ddra;
+wire [7:0] plip_prb, plip_ddrb;
+wire       plip_rak, plip_bus_oe, plip_flag_n, plip_prb_rd;
+wire [7:0] plip_bus;
+
+// End of a CPU read cycle on $BFE101: one pulse per access. cpu_rd toggles with
+// cck while the cycle is waiting for DTACK, so rd_cyc (high during the whole
+// cycle) is used instead; the data was latched before AS is released.
+wire plip_prb_acc = sel_cia_a & rd_cyc & (cpu_address_out[11:8] == 4'h1);
+reg  plip_prb_acc_q, plip_prb_rd_r;
+always @(posedge clk) begin
+	plip_prb_rd_r <= 1'b0;
+	if (clk7_en) begin
+		plip_prb_acc_q <= plip_prb_acc;
+		plip_prb_rd_r  <= plip_prb_acc_q & ~plip_prb_acc;
+	end
+end
+assign plip_prb_rd = plip_prb_rd_r;
+
+// /ACK is edge triggered on a real 8520 (cia_int is level triggered): a single
+// pulse that is sampled by exactly one clk7_en, so an ICR read during the /ACK
+// pulse cannot set FLG a second time
+reg plip_ack_q, plip_ack_p;
+always @(posedge clk) begin
+	plip_ack_q <= plip_flag_n;
+	if (plip_ack_q & ~plip_flag_n) plip_ack_p <= 1'b1;
+	else if (clk7_en)              plip_ack_p <= 1'b0;
+end
+
+plip_peer PLIP1 (
+	.clk(clk), .rst(reset | ~plip_en),
+	.sel_o(plip_pra[2]), .sel_oe(plip_ddra[2]),
+	.req_o(plip_pra[1]), .req_oe(plip_ddra[1]),
+	.prb_o(plip_prb), .ddrb_out(&plip_ddrb), .prb_rd(plip_prb_rd),
+	.rak(plip_rak), .bus(plip_bus), .bus_oe(plip_bus_oe), .flag_n(plip_flag_n),
+	.h_we(plip_h_we), .h_waddr(plip_h_waddr), .h_wdata(plip_h_wdata),
+	.h_commit(plip_h_commit), .h_len(plip_h_len), .tx_valid(plip_tx_valid),
+	.h_raddr(plip_h_raddr), .h_rdata(plip_h_rdata),
+	.rx_valid(plip_rx_valid), .rx_len(plip_rx_len), .h_release(plip_h_release),
+	.loop_en(plip_loop), .stat_rx(plip_stat_rx), .stat_tx(plip_stat_tx), .rt_clks(plip_rt_clks)
+);
+`endif
+
 //instantiate cia A
 wire [3:0] porta_out;
 assign {_fire1_dat,_fire0_dat,_led} = porta_out[3:1];
@@ -643,7 +731,15 @@ ciaa CIAA1
 	.irq(int2),
 	.porta_in({_fire1,_fire0,_ready,_track0,_wprot,_change}),
 	.porta_out(porta_out),
+`ifdef ENABLE_PLIP
+	.plip_en(plip_en),
+	.plip_flag(plip_en & plip_ack_p),
+	.plip_prb(plip_prb),
+	.plip_ddrb(plip_ddrb),
+	.portb_in(plip_bus_oe ? plip_bus : {_joy4[0],_joy4[1],_joy4[2],_joy4[3],_joy3[0],_joy3[1],_joy3[2],_joy3[3]}),
+`else
 	.portb_in({_joy4[0],_joy4[1],_joy4[2],_joy4[3],_joy3[0],_joy3[1],_joy3[2],_joy3[3]}),
+`endif
 	.kbd_mouse_type(kbd_mouse_type),
 	.kms_level(kms_level),
 	.kbd_mouse_data(kbd_mouse_data), 
@@ -668,7 +764,14 @@ ciab CIAB1
 	.eclk(eclk[8]),
 	.irq(int6),
 	.flag(index),
+`ifdef ENABLE_PLIP
+	.porta_in({cd,cts,dsr,ri&_joy3[4],1'b1,plip_en ? plip_rak : _joy4[4]}),
+	.plip_en(plip_en),
+	.plip_pra(plip_pra),
+	.plip_ddra(plip_ddra),
+`else
 	.porta_in({cd,cts,dsr,ri&_joy3[4],1'b1,_joy4[4]}),
+`endif
 	.porta_out({dtr,rts}),
 	.portb_out({_motor,_sel3,_sel2,_sel1,_sel0,side,direc,_step})
 );
@@ -702,6 +805,7 @@ minimig_m68k_bridge CPU1
 	._dtack(_cpu_dtack),
 	.rd(cpu_rd),
 	.rd_cyc(rd_cyc),
+	.cyc(cpu_cyc),
 	.hwr(cpu_hwr),
 	.lwr(cpu_lwr),
 	.address(cpu_address),
@@ -830,6 +934,9 @@ gary GARY1
 `ifndef DISABLE_IDE
 	.sel_ide(sel_ide),
 	.sel_gayle(sel_gayle),
+`endif
+`ifdef ENABLE_A314
+	.sel_a314(sel_a314),
 `endif
 `ifdef ENABLE_RTC
 	.sel_rtc(sel_rtc),
@@ -1055,6 +1162,66 @@ assign rtg_addr = cpu_address_out[10:1];
 assign rtg_din  = cpu_data_out;
 `endif
 
+`ifdef ENABLE_A314
+`ifdef A314_FAST
+// ---- A314 clockport interface, Amiga side from the cpu wrapper (A314_FAST): the CPU accesses
+// $D8xxxx without the chip bus, the bridge and the glue below never see them
+a314_cp A314 (
+	.clk(clk), .reset(reset),
+	.a_sel(a314_f_sel), .a_end(a314_f_end), .a_we(a314_f_we), .a_reg(a314_f_reg),
+	.a_din(a314_f_din), .a_dout(a314_f_dout), .int6(int6_a314),
+	.h_addr(a314_h_addr), .h_we(a314_h_we), .h_wdata(a314_h_wdata), .h_rdata(a314_h_rdata),
+	.h_irq_we(a314_h_irq_we), .h_irq_data(a314_h_irq_data), .pi_irq(a314_pi_irq)
+);
+wire [15:0] a314_out = 16'h0000;
+`else
+// ---- A314 clockport interface: 4 byte registers at $D80001 + reg*4 (see a314_cp.v)
+// One bus cycle = one access. Whether a cycle belongs to the A314 and which register it
+// means is decided when the cycle starts; the first write strobe of the cycle takes the
+// data, and the side effects (pointer + 1, write, interrupt bits) happen once when the
+// cycle ends. sel_a314 and cpu_rd/cpu_lwr alone are no use for that: after AS has been
+// released they can be active for a moment with the address of the next cycle.
+reg         cpu_cyc_q, a314_acc, a314_end, a314_we;
+reg [1:0]   a314_reg;
+reg [7:0]   a314_din;
+wire [7:0]  a314_dout;
+always @(posedge clk) begin
+	cpu_cyc_q <= cpu_cyc;
+	a314_end  <= a314_acc & ~cpu_cyc;
+	if (~cpu_cyc)
+		a314_acc <= 1'b0;
+	else if (~cpu_cyc_q) begin
+		a314_acc <= sel_a314;
+		a314_reg <= cpu_address_out[3:2];
+		a314_we  <= 1'b0;
+	end else if (a314_acc & (cpu_lwr | cpu_hwr) & ~a314_we) begin
+		a314_we  <= 1'b1;
+		a314_din <= cpu_lwr ? cpu_data_out[7:0] : cpu_data_out[15:8];
+	end
+	if (reset) begin
+		a314_acc <= 1'b0;
+		a314_end <= 1'b0;
+		a314_we  <= 1'b0;
+	end
+end
+
+a314_cp A314 (
+	.clk(clk), .reset(reset),
+	.a_sel(1'b1), .a_end(a314_end), .a_we(a314_we), .a_reg(a314_reg),
+	.a_din(a314_din), .a_dout(a314_dout), .int6(int6_a314),
+	.h_addr(a314_h_addr), .h_we(a314_h_we), .h_wdata(a314_h_wdata), .h_rdata(a314_h_rdata),
+	.h_irq_we(a314_h_irq_we), .h_irq_data(a314_h_irq_data), .pi_irq(a314_pi_irq)
+);
+
+wire [15:0] a314_out = (a314_acc && cpu_rd) ? {a314_dout, a314_dout} : 16'h0000;
+`endif
+`else
+assign int6_a314 = 1'b0;
+`endif
+// ---- end of A314
+
+//-------------------------------------------------------------------------------------
+
 //data multiplexer
 assign cpu_data_in = gary_data_out
 		     | cia_data_out
@@ -1069,6 +1236,9 @@ assign cpu_data_in = gary_data_out
 `endif
 `ifdef ENABLE_RTG
 		     | rtg_dout
+`endif
+`ifdef ENABLE_A314
+		     | a314_out
 `endif
 `ifdef ENABLE_TOCCATA
 		     | toccata_out
