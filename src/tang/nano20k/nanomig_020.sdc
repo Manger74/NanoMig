@@ -47,3 +47,6 @@ set_false_path -from [get_regs {*packet_picker/audio_sample_word_transfer*}] -to
 // enables, so these are multi cycle paths on the 28MHz clock.
 set_multicycle_path -from [get_regs {*PAULA1/pf1/dsklen*}] -to [get_regs {*AGNUS1/bl1/*}] -setup -end 4
 set_multicycle_path -from [get_regs {*PAULA1/pf1/dsklen*}] -to [get_regs {*AGNUS1/bl1/*}] -hold -end 3
+// The OSD enable flag crosses from clk28 into the pixel clock through a two
+// stage synchronizer in osd_hdmi.v
+set_false_path -from [get_regs {*osd_hdmi/enabled*}] -to [get_regs {*osd_hdmi/en_s*}]
