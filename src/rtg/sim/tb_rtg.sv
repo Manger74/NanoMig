@@ -25,7 +25,8 @@
 module tb_rtg;
   reg clk_mem = 0, clk_pix = 0, clk_bus = 0;
   always #5.845 clk_mem = ~clk_mem;   // 85.5 MHz
-  always #(`TPIX) clk_pix = ~clk_pix;   // pixel clock of the raster
+  reg pix_run = 1;                       // 0: pixel clock stopped (hdmi pll switching)
+always #(`TPIX) if (pix_run) clk_pix = ~clk_pix;   // pixel clock of the raster
   always #17.54 clk_bus = ~clk_bus;   // 28.5 MHz
 
   // --------------------------- sdram + model ---------------------------
@@ -297,6 +298,20 @@ module tb_rtg;
     program_and_check(0);
 `endif
 
+    // switch off like an amiga reset while the pixel clock stands still (pll switch):
+    // the status must not report an active scanout, otherwise the driver's
+    // WaitVerticalSync waits forever. The snapshot enable must drop without a frame start.
+    bus_read(11'h10c);
+    if (!rd_val[3]) begin $display("FAIL: scanout not active before switch off"); total_errors = total_errors + 1; end
+    pix_run = 0;
+    bus_write(11'h110, 0);
+    bus_read(11'h10c);
+    $display("switch off with stopped pixel clock: status=%04h", rd_val);
+    if (rd_val[3]) begin $display("FAIL: status still active"); total_errors = total_errors + 1; end
+    pix_run = 1;
+    repeat (20) @(posedge clk_pix);
+    $display("after switch off: p_en=%b (expected 0 without a frame start)", rtg.p_en);
+    if (rtg.p_en !== 1'b0) total_errors = total_errors + 1;
     $display("TOTAL mismatches=%0d model_errors=%0d", total_errors, model.errors);
     $finish;
   end

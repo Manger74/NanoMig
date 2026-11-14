@@ -158,7 +158,9 @@ reg [1:0] ovr_sync;
 reg [15:0] rd_data;
 always @* begin
   case ({reg_addr[10:1], 1'b0})
-    11'h10c: rd_data = { 12'd0, active_sync[1], ovr_sync[1], 1'b0, vblank_sync[1] };
+    // active also needs the enable bit: the pixel clock stops while the hdmi pll
+    // switches and the driver's WaitVerticalSync must not wait for a stopped scanout
+    11'h10c: rd_data = { 12'd0, active_sync[1] & reg_en, ovr_sync[1], 1'b0, vblank_sync[1] };
     11'h10e: rd_data = 16'h8321;
     11'h110: rd_data = { 15'd0, reg_en };
     default: rd_data = 16'd0;
@@ -237,9 +239,16 @@ reg   [7:0] f_bursts;
 wire        fetch_row0  = p_en && (yn2 == p_vs) && (p_vs < V_ACTIVE);
 wire        fetch_next  = p_en && vin_n && (vsub_n == 2'd0) && more_rows;
 
+// the enable bit in the pixel domain: when the rtg is switched off (by the driver or by
+// an amiga reset) the native raster runs and the frame start of this raster is never
+// seen, so the enable of the snapshot is cleared directly
+reg  [1:0]  en_sync_p;
+always @(posedge clk_pix) en_sync_p <= { en_sync_p[0], reg_en };
+
 always @(posedge clk_pix) begin
   vblank_pix <= (y0 >= V_ACTIVE);
   active_pix <= p_en;
+  if (!en_sync_p[1]) p_en <= 1'b0;
 
   if (line_end) begin
     // snapshot the configuration once per frame
@@ -409,7 +418,7 @@ always @(posedge clk_bus) ovr_sync <= { ovr_sync[0], overrun };
 // power-up values (the fpga starts with these)
 initial begin
   f_busy = 1'b0; mem_req = 1'b0; f_toggle = 1'b0; tgl_sync = 3'd0; overrun = 1'b0; ovr_sync = 2'd0; en_sync_m = 2'd0;
-  p_en = 1'b0; vin = 1'b0; ry = 10'd0; vsub = 2'd0; rdbuf = 1'b0;
+  p_en = 1'b0; en_sync_p = 2'd0; vin = 1'b0; ry = 10'd0; vsub = 2'd0; rdbuf = 1'b0;
   hsub = 2'd0; rx = 10'd0; vblank_pix = 1'b0; active_pix = 1'b0;
   vblank_sync = 2'd0; active_sync = 2'd0; r_addr = 19'd0; f_bursts = 8'd0;
   lb_we = 1'b0; rgb = 24'd0;

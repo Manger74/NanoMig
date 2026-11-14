@@ -9,4 +9,4 @@ out=obj_rtg${1:+_$1}; rm -rf $out
 ${VERILATOR:-verilator} --binary --timing -Wno-fatal -Wno-lint -Wno-style --Mdir $out \
   -MAKEFLAGS CFG_CXXFLAGS_PCH_I=-include --top-module tb_rtg -DENABLE_RTG -DROWS=1 ${1:+-D$1} \
   ../../misc/sdram.sv sdram_model.sv ../rtg_video.sv tb_rtg.sv > $out.log 2>&1 || { tail -30 $out.log; exit 1; }
-$out/Vtb_rtg | grep -E "^TEST|status|^--|TOTAL|row y|mismatch|rror"
+$out/Vtb_rtg | grep -E "^TEST|status|^--|TOTAL|row y|mismatch|rror|switch|FAIL"
