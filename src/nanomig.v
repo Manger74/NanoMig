@@ -116,7 +116,8 @@ module nanomig (
    output	 rtg_wr,
    output [10:1] rtg_addr,
    output [15:0] rtg_din,
-   input [15:0]	 rtg_dout
+   input [15:0]	 rtg_dout,
+   output	 rtg_reset      // amiga reset: system reset or RESET instruction
 `endif
 ); 
 `ifndef GATEMATE
@@ -126,6 +127,11 @@ module nanomig (
 `endif
    
 wire cpu_rst;
+`ifdef ENABLE_RTG
+// like a graphics board on the bus, the rtg is reset by every amiga reset so that
+// the native video comes back after a reboot
+assign rtg_reset = !cpu_rst || !cpu_nrst_out;
+`endif
 wire [15:0] ram_din;
 
 reg reset_d;

@@ -700,6 +700,7 @@ wire fastram_ready;
 wire        rtg_sel, rtg_rd, rtg_wr;
 wire [10:1] rtg_addr;
 wire [15:0] rtg_din, rtg_dout;
+wire        rtg_reset;
 wire        rtg_mem_req, rtg_mem_dv, rtg_mem_ack;
 wire [18:0] rtg_mem_addr;
 wire [31:0] rtg_mem_data;
@@ -841,7 +842,8 @@ nanomig nanomig
  .rtg_wr(rtg_wr),
  .rtg_addr(rtg_addr),
  .rtg_din(rtg_din),
- .rtg_dout(rtg_dout)
+ .rtg_dout(rtg_dout),
+ .rtg_reset(rtg_reset)
 `else
  .fastram_ready(fastram_ready)
 `endif
@@ -1341,7 +1343,7 @@ rtg_video #(
 `endif
 ) rtg_video (
   .clk_bus   ( clk_28m     ),
-  .reset_bus ( rst_28m     ),
+  .reset_bus ( rst_28m || rtg_reset ),
 `ifdef RTG_DBG_NOBUS
   .reg_sel   ( 1'b0        ),   // bisect build: no cpu access to the rtg registers
 `else
