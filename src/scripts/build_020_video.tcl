@@ -10,7 +10,8 @@
 #   gw_sh scripts/build_020_video.tcl test1024     free running 1024x768 test pattern, 65MHz VESA
 #   gw_sh scripts/build_020_video.tcl rtg          RTG on 800x600 (driver minimig.card)
 #   gw_sh scripts/build_020_video.tcl rtg1024rb    RTG on 1024x768 reduced blanking (driver minimig_1024rb.card)
-#   gw_sh scripts/build_020_video.tcl rtg1024      RTG on 1024x768 VESA (driver minimig_1024.card)
+#   gw_sh scripts/build_020_video.tcl rtg1024      RTG on 1024x768 VESA (driver minimig_1024.card),
+#                                                  NOT RECOMMENDED: does not boot on hardware, use rtg1024rb
 #   gw_sh scripts/build_020_video.tcl rtgled       rtg, leds show the rtg window accesses (bisect)
 #   gw_sh scripts/build_020_video.tcl rtgdbg       rtg, cpu register window disconnected (bisect)
 #
