@@ -10,8 +10,10 @@ horizontally and 3x vertically (400x300 is shown doubled), placed by a viewport
 inside the 800x600 display. The register layout is the one of the MiSTle MiniMig
 RTG core, so its P96 driver (adapted here, see below) works.
 
-Build (from `src/`):
+Build (from `src/`, Gowin IDE installed in `$HOME/gowin`):
 
+    export PATH=$PATH:$HOME/gowin/IDE/bin
+    export QT_QPA_PLATFORM=minimal
     gw_sh scripts/build_020_video.tcl rtg
 
 Other variants: `vmodes` (video mode logic only, native video), `test800x600`,
