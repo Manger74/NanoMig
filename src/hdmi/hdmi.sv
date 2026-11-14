@@ -271,15 +271,14 @@ generate
 
         // See Section 5.2.3.1
         int max_num_packets_alongside;
-        logic [4:0] num_packets_alongside;
+        logic [4:0] num_packets_alongside = 5'd0;
         always_comb
-        begin
 	    max_num_packets_alongside = (frame_width - screen_width  /* VD period */ - 2 /* V guard */ - 8 /* V preamble */ - 4 /* Min V control period */ - 2 /* DI trailing guard */ - 2 /* DI leading guard */ - 8 /* DI premable */ - 4 /* Min DI control period */) / 32;
-            if (max_num_packets_alongside > 18)
-                num_packets_alongside = 5'd18;
-            else
-                num_packets_alongside = 5'(max_num_packets_alongside);
-        end
+        // registered: it only depends on the video mode, which changes while the output
+        // is held in reset. Takes the mode mux and the division out of the critical
+        // pixel clock path (data island -> packet picker)
+        always_ff @(posedge clk_pixel)
+            num_packets_alongside <= (max_num_packets_alongside > 18) ? 5'd18 : 5'(max_num_packets_alongside);
 
         logic data_island_period_instantaneous;
         assign data_island_period_instantaneous = num_packets_alongside > 0 && cx >= screen_width + 14 && cx < screen_width + 14 + num_packets_alongside * 32;
