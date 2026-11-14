@@ -52,9 +52,35 @@ RTG_VIEW_VSTOP = $1e
 RTG_ROW_BURSTS = $20   ; visible source row length in 16-byte bursts
 
 
-; Physical raster: NanoMig 800x600@60 (VESA timing, 1056x628 total, 39.9MHz pixel
-; clock from the HDMI PLL). The HDMI and RTG scanout of the core have to match.
+; Physical raster of the NanoMig core. The HDMI and RTG scanout of the core have to
+; match: assemble with -DNANOMIG_1024_RB or -DNANOMIG_1024_VESA for the cores built with
+; VMODE_1024_RB or VMODE_1024_VESA, without for the 800x600 core.
 ; The driver describes these timings to P96; it cannot program the PLL.
+	IFD	NANOMIG_1024_RB
+; 1024x768@60, CVT reduced blanking with 802 lines, 1184x802 total, 57.0MHz
+RTG_WIDTH EQU 1024
+RTG_HEIGHT EQU 768
+RTG_HTOTAL EQU 1184
+RTG_VTOTAL EQU 802
+RTG_PIXEL_CLOCK EQU 57000000
+RTG_HSTART EQU 48
+RTG_HSIZE EQU 32
+RTG_VSTART EQU 3
+RTG_VSIZE EQU 4
+	ELSE
+	IFD	NANOMIG_1024_VESA
+; 1024x768@60, VESA DMT, 1344x806 total, 64.98MHz
+RTG_WIDTH EQU 1024
+RTG_HEIGHT EQU 768
+RTG_HTOTAL EQU 1344
+RTG_VTOTAL EQU 806
+RTG_PIXEL_CLOCK EQU 64980000
+RTG_HSTART EQU 24
+RTG_HSIZE EQU 136
+RTG_VSTART EQU 3
+RTG_VSIZE EQU 6
+	ELSE
+; 800x600@60, VESA, 1056x628 total, 39.9MHz
 RTG_WIDTH EQU 800
 RTG_HEIGHT EQU 600
 RTG_HTOTAL EQU 1056
@@ -64,6 +90,8 @@ RTG_HSTART EQU 40
 RTG_HSIZE EQU 128
 RTG_VSTART EQU 1
 RTG_VSIZE EQU 4
+	ENDC
+	ENDC
 
 ; Keep a sensible minimum so each indexed row meets the fixed FIFO prefill
 ; target after ModeRepeat selects the largest fitting horizontal factor.
@@ -181,7 +209,15 @@ MinimigCard:
 	dc.b	'minimig.card',0,0
 	dc.b	'$VER: '
 IDString:
+	IFD	NANOMIG_1024_RB
+	dc.b	'minimig.card 1.15 (NanoMig 1024x768 RB)',0
+	ELSE
+	IFD	NANOMIG_1024_VESA
+	dc.b	'minimig.card 1.15 (NanoMig 1024x768)',0
+	ELSE
 	dc.b	'minimig.card 1.15 (NanoMig 800x600)',0
+	ENDC
+	ENDC
 	dc.b	0
 expansionLibName:
 	dc.b	'expansion.library',0
@@ -1056,10 +1092,24 @@ GetPixelClock:
 ; Entries are grouped by vertical factor, then horizontal factor. The default
 ; raster's 3x vertical total rounds to 269, so its clocks include that rounding.
 ; PixelClockCount is twelve: four horizontal by three vertical factors.
+; pixel clock per vertical (row) and horizontal (column) repeat, scaled so that the
+; rounded up totals of the repeated raster keep the refresh rate
 RepeatClocks:
+	IFD	NANOMIG_1024_RB
+	dc.l 57000000,28500000,19016047,14250000
+	dc.l 28500000,14250000,9508024,7125000
+	dc.l 19047382,9523691,6354490,4761845
+	ELSE
+	IFD	NANOMIG_1024_VESA
+	dc.l 64980000,32490000,21660000,16245000
+	dc.l 32490000,16245000,10830000,8122500
+	dc.l 21686873,10843437,7228958,5421718
+	ELSE
 	dc.l 39900000,19950000,13300000,9975000
 	dc.l 19950000,9975000,6650000,4987500
 	dc.l 13342357,6671178,4447452,3335589
+	ENDC
+	ENDC
 RepeatCanvasWidth:
 	dc.w RTG_WIDTH,RTG_HALF_WIDTH,RTG_THIRD_WIDTH,RTG_QUARTER_WIDTH
 RepeatCanvasHeight:

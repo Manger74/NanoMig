@@ -196,6 +196,7 @@ end
 wire        line_end = (x0 == H_TOTAL - 1);
 wire  [9:0] yn       = (y0 == V_TOTAL - 1) ? 10'd0 : y0 + 10'd1;
 wire  [9:0] yn1      = (yn == V_TOTAL - 1) ? 10'd0 : yn + 10'd1;
+wire  [9:0] yn2      = (yn1 == V_TOTAL - 1) ? 10'd0 : yn1 + 10'd1;
 
 reg         vin;           // current line is inside the viewport
 reg  [9:0]  ry;            // source row of the current line
@@ -231,7 +232,9 @@ reg         f_buf;
 reg  [18:0] r_addr;        // address of the most recently requested row
 reg   [7:0] f_bursts;
 
-wire        fetch_row0  = p_en && (yn1 == p_vs) && (p_vs < V_ACTIVE);
+// row 0 is requested two lines ahead: the request for row 1 follows at the start of
+// row 0, so row 0 gets two line times like every row with vertical repeat
+wire        fetch_row0  = p_en && (yn2 == p_vs) && (p_vs < V_ACTIVE);
 wire        fetch_next  = p_en && vin_n && (vsub_n == 2'd0) && more_rows;
 
 always @(posedge clk_pix) begin

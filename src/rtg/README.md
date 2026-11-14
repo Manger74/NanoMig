@@ -28,7 +28,13 @@ header of `scripts/build_020_video.tcl`).
 | `VMODE_1024_RB` | 1184x802, CVT reduced blanking (+h/-v), 60.0 Hz | 57.00 MHz | x10, ODIV 2 |
 | `VMODE_1024_VESA` | 1344x806, VESA DMT (-h/-v), 60.0 Hz | 64.98 MHz | x57 / IDIV 5, ODIV 2 |
 
-`sim/run_vmode.sh [VMODE_1024_RB|VMODE_1024_VESA]` checks the sync generator.
+RTG cores with 1024x768: `rtg1024rb` and `rtg1024`. Each needs its own driver:
+`amiga/minimig_1024rb.card` or `amiga/minimig_1024.card`, copied to
+`LIBS:Picasso96/minimig.card`. Picture modes up to 1024x768 (8 bit), 16 bit full
+width only with little chipset load, 512x384 (2x2) in 16 bit is uncritical.
+
+`sim/run_vmode.sh [VMODE_1024_RB|VMODE_1024_VESA]` checks the sync generator,
+`sim/run_rtg.sh [VMODE_1024_RB|VMODE_1024_VESA]` the RTG chain on that raster.
 
 ## Registers (CPU window `$B80000`)
 
@@ -54,10 +60,11 @@ The framebuffer address is a CPU address in fast RAM (`$200000-$7FFFFF`), which 
 the same byte address in the SDRAM. Stride and bytes per row must be multiples of
 16. The configuration is taken over at the start of every vblank.
 
-Bandwidth: a full 800x600 16 bit picture needs most of the free SDRAM slots and
-sets the overrun bit when chipset and CPU load the memory heavily (see the heavy
-traffic case of `sim/tb_rtg.sv`). 8 bit pictures and pictures with a horizontal
-repeat of 2 or more are uncritical.
+Bandwidth: one source row has to be fetched within one line time (two or three
+with vertical repeat). In the simulation (`sim/tb_rtg.sv`, random chipset like load
+on port 1) a row of 1024 bytes (1024 pixels 8 bit, 512 pixels 16 bit) per line holds
+at 25 % load and overruns at 50 %; 800x600 16 bit with 3x vertical repeat holds at
+50 %. The overrun bit in the status register shows lost rows.
 
 ## P96 driver
 

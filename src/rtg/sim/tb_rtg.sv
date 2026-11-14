@@ -1,9 +1,31 @@
 `timescale 1ns/1ps
+// display raster: 800x600 (default) or 1024x768 (define VMODE_1024_RB or VMODE_1024_VESA)
+`ifdef VMODE_1024_VESA
+  `define VMODE_1024
+  `define W 1024
+  `define H 768
+  `define HT 1344
+  `define VT 806
+  `define TPIX 7.695
+`elsif VMODE_1024_RB
+  `define VMODE_1024
+  `define W 1024
+  `define H 768
+  `define HT 1184
+  `define VT 802
+  `define TPIX 8.772
+`else
+  `define W 800
+  `define H 600
+  `define HT 1056
+  `define VT 628
+  `define TPIX 12.53
+`endif
 // full chain test: cpu register writes -> rtg_video -> sdram scanout port -> sdram model, hdmi-like capture
 module tb_rtg;
   reg clk_mem = 0, clk_pix = 0, clk_bus = 0;
   always #5.845 clk_mem = ~clk_mem;   // 85.5 MHz
-  always #12.53 clk_pix = ~clk_pix;   // 39.9 MHz
+  always #(`TPIX) clk_pix = ~clk_pix;   // pixel clock of the raster
   always #17.54 clk_bus = ~clk_bus;   // 28.5 MHz
 
   // --------------------------- sdram + model ---------------------------
@@ -38,19 +60,19 @@ module tb_rtg;
   wire [15:0] reg_dout; wire rtg_enable;
   reg [10:0] cx = 0; reg [9:0] cy = 0;
   wire [23:0] rgb;
-  rtg_video rtg (.clk_bus(clk_bus), .reset_bus(1'b0), .reg_sel(reg_sel), .reg_rd(reg_rd), .reg_wr(reg_wr),
+  rtg_video #(.H_TOTAL(`HT), .H_ACTIVE(`W), .V_TOTAL(`VT), .V_ACTIVE(`H)) rtg (.clk_bus(clk_bus), .reset_bus(1'b0), .reg_sel(reg_sel), .reg_rd(reg_rd), .reg_wr(reg_wr),
     .reg_addr(reg_addr), .reg_din(reg_din), .reg_dout(reg_dout), .rtg_enable(rtg_enable),
     .clk_mem(clk_mem), .mem_req(rtg_cs), .mem_addr(rtg_addr), .mem_data(rtg_dout), .mem_dv(rtg_dv), .mem_ack(rtg_ack),
     .clk_pix(clk_pix), .cx(cx), .cy(cy), .rgb(rgb));
 
   // hdmi like counters and capture
   integer frame = 0;
-  reg [23:0] img [0:600*800-1];
+  reg [23:0] img [0:`H*`W-1];
   always @(posedge clk_pix) begin
-    if (cx < 800 && cy < 600) img[cy*800+cx] = rgb;
-    if (cx == 1055) begin
+    if (cx < `W && cy < `H) img[cy*`W+cx] = rgb;
+    if (cx == `HT - 1) begin
       cx <= 0;
-      if (cy == 627) begin cy <= 0; frame <= frame + 1; end else cy <= cy + 1;
+      if (cy == `VT - 1) begin cy <= 0; frame <= frame + 1; end else cy <= cy + 1;
     end else cx <= cx + 1;
   end
 
@@ -131,9 +153,9 @@ module tb_rtg;
       f0 = frame; wait (frame >= f0 + 3);
       // the image array now holds a frame, which was produced with the new configuration
       mism = 0; shown = 0;
-      for (y = 0; y < 600; y = y + 1)
-        for (x = 0; x < 800; x = x + 1) begin
-          e = expect_px(x, y); g = img[y*800+x];
+      for (y = 0; y < `H; y = y + 1)
+        for (x = 0; x < `W; x = x + 1) begin
+          e = expect_px(x, y); g = img[y*`W+x];
           if (e !== g) begin
             mism = mism + 1;
             if (shown < 6) begin shown = shown + 1; $display("  mismatch x=%0d y=%0d exp %h got %h", x, y, e, g); end
@@ -141,14 +163,14 @@ module tb_rtg;
         end
       begin : rows
         integer yy, xx, cnt;
-        for (yy = 0; yy < 600; yy = yy + 1) begin
+        for (yy = 0; yy < `H; yy = yy + 1) begin
           cnt = 0;
-          for (xx = 0; xx < 800; xx = xx + 1) if (expect_px(xx,yy) !== img[yy*800+xx]) cnt = cnt + 1;
+          for (xx = 0; xx < `W; xx = xx + 1) if (expect_px(xx,yy) !== img[yy*`W+xx]) cnt = cnt + 1;
           if (cnt != 0 && `ROWS) $display("  row y=%0d mismatches=%0d", yy, cnt);
         end
       end
       $display("TEST bpp=%0d rep=%0dx%0d win=%0d..%0d x %0d..%0d : %0d mismatches", c_bpp, c_hrep, c_vrep, c_hs*16, c_he*16, c_vs*16, c_ve*16, mism);
-      if (!(c_bpp==16 && c_vrep==3 && bg==1)) total_errors = total_errors + mism;
+      if (!expect_overrun) total_errors = total_errors + mism;
       bus_read(11'h10c); $display("  status=%h (bit2 = fetch overrun)", rd_val);
     end
   endtask
@@ -156,11 +178,12 @@ module tb_rtg;
   // --------------------------- background traffic ---------------------------
   // random cpu/chipset like load on port 1 and 2 (outside the framebuffer region)
   integer bg = 1;
+  integer bg_pct = 50;   // share of the slots used by port 1 (chipset like)
   reg p2_ack_d = 0; reg p2_busy = 0;
   always @(posedge clk_mem) begin
     p2_ack_d <= p2_ack;
     if (slot == 8) begin cs <= 0; we <= 0; refresh <= 0; end
-    if (ready && bg && slot == 10 && $urandom_range(0,99) < 50) begin
+    if (ready && bg && slot == 10 && $urandom_range(0,99) < bg_pct) begin
       cs <= 1; we <= $urandom_range(0,2) == 0; addr <= $urandom_range(0, 'h0FFFFF); ds <= $urandom_range(0,3); din <= $urandom;
     end
     if (p2_busy) begin
@@ -171,6 +194,7 @@ module tb_rtg;
   end
 
   integer i, sx, sy;
+  reg expect_overrun = 0;   // bandwidth limited case, mismatches are reported but not counted
   initial begin
     for (i = 0; i < 256; i = i + 1) pal[i] = { i[7:0] ^ 8'h5a, (i[7:0] * 3), 255 - i[7:0] };
     for (i = 0; i < (1<<20); i = i + 1) fb[i] = $urandom;
@@ -182,6 +206,55 @@ module tb_rtg;
     fb_to_model();
     repeat (4) @(posedge clk_bus);
 
+`ifdef VMODE_1024
+    // test 1: 8 bit 1024x768 1x1, whole screen, stride 1024: needs 43% of the slots
+    c_bpp = 8; c_fmt = 1; c_hrep = 1; c_vrep = 1; c_hs = 0; c_he = 64; c_vs = 0; c_ve = 48;
+    c_stride_b = 1024; c_bursts = 64; c_base = FB_BASE;
+    for (sy = 0; sy < 768; sy = sy + 1) for (sx = 0; sx < 1024; sx = sx + 1) fb[sy*1024 + sx] = (sx*3 + sy*7 + (sx>>4)*13 + (sy>>3)*5) & 255;
+    fb_to_model();
+    bg_pct = 25;
+    $display("-- port 1 load 25%%");
+    program_and_check(0);
+    bg_pct = 50; expect_overrun = 1;
+    $display("-- port 1 load 50%%: bandwidth limited (not counted)");
+    bus_write(11'h110, 0); repeat (200) @(posedge clk_bus); bus_write(11'h110, 1);
+    program_and_check(0);
+    expect_overrun = 0;
+    bus_write(11'h110, 0); repeat (200) @(posedge clk_bus);   // clears the sticky overrun flag
+
+    // test 2: 16 bit RGB565 512x384 2x2 on the whole screen, stride 1024
+    c_bpp = 16; c_fmt = 1; c_hrep = 2; c_vrep = 2; c_stride_b = 1024; c_bursts = 64;
+    for (sy = 0; sy < 384; sy = sy + 1) for (sx = 0; sx < 512; sx = sx + 1) begin
+      fb[sy*1024 + sx*2]     = (sx*7 + sy) & 255;
+      fb[sy*1024 + sx*2 + 1] = (sx + sy*11) & 255;
+    end
+    fb_to_model();
+    program_and_check(0);
+
+    // test 3: 8 bit 800x600 1x1 centered (112..912 x 80..688), stride 800
+    c_bpp = 8; c_hrep = 1; c_vrep = 1; c_hs = 7; c_he = 57; c_vs = 5; c_ve = 43;
+    c_stride_b = 800; c_bursts = 50; c_base = FB_BASE + 32'h1000;
+    for (sy = 0; sy < 608; sy = sy + 1) for (sx = 0; sx < 800; sx = sx + 1) fb['h1000 + sy*800 + sx] = (sx*5 + sy*3 + (sx>>3)) & 255;
+    fb_to_model();
+    program_and_check(0);
+
+    // test 4: 16 bit RGB555 1024 wide 1x1 (512 lines, 1 MB test framebuffer): needs 87% of the slots
+    c_bpp = 16; c_fmt = 2; c_hs = 0; c_he = 64; c_vs = 0; c_ve = 32;
+    c_stride_b = 2048; c_bursts = 128; c_base = FB_BASE;
+    for (sy = 0; sy < 512; sy = sy + 1) for (sx = 0; sx < 1024; sx = sx + 1) begin
+      fb[sy*2048 + sx*2]     = (sx*3 + sy) & 255;
+      fb[sy*2048 + sx*2 + 1] = (sx + sy*5) & 255;
+    end
+    fb_to_model();
+    bg = 0;
+    $display("-- no background traffic");
+    program_and_check(0);
+    bg = 1; expect_overrun = 1;
+    $display("-- with heavy background traffic this mode is bandwidth limited (not counted)");
+    bus_write(11'h110, 0); repeat (200) @(posedge clk_bus); bus_write(11'h110, 1);
+    program_and_check(0);
+    expect_overrun = 0;
+`else
     // test 1: 8 bit 400x300, 2x2 on the whole 800x600
     c_bpp = 8; c_hrep = 2; c_vrep = 2; c_hs = 0; c_he = 50; c_vs = 0; c_ve = 37;
     c_stride_b = 512; c_bursts = 25; c_fmt = 1; c_base = FB_BASE;
@@ -219,9 +292,10 @@ module tb_rtg;
     $display("-- no background traffic");
     program_and_check(0);
     bg = 1;
-    $display("-- with heavy background traffic (50%% of the slots taken by port 1) this mode is bandwidth limited");
+    $display("-- with heavy background traffic (50%% of the slots taken by port 1)");
     bus_write(11'h110, 0); repeat (200) @(posedge clk_bus); bus_write(11'h110, 1);
     program_and_check(0);
+`endif
 
     $display("TOTAL mismatches=%0d model_errors=%0d", total_errors, model.errors);
     $finish;
