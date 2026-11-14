@@ -1138,7 +1138,14 @@ end
 // pixel clock depends on the video mode: 28.5, 39.9 or 74.1MHz
 localparam integer AUDIO_ACC_WIDTH = 27;
 localparam [AUDIO_ACC_WIDTH-1:0] AUDIO_INC_NATIVE = ((AUDIO_ACC_WIDTH*2)'(AUDIO_RATE) <<< AUDIO_ACC_WIDTH) / 28500000;
-localparam [AUDIO_ACC_WIDTH-1:0] AUDIO_INC_800    = ((AUDIO_ACC_WIDTH*2)'(AUDIO_RATE) <<< AUDIO_ACC_WIDTH) / 39900000;
+`ifdef VMODE_1024_VESA
+localparam integer PIXEL_MODE2 = 64980000;   // 1024x768 VESA
+`elsif VMODE_1024_RB
+localparam integer PIXEL_MODE2 = 57000000;   // 1024x768 reduced blanking
+`else
+localparam integer PIXEL_MODE2 = 39900000;   // 800x600
+`endif
+localparam [AUDIO_ACC_WIDTH-1:0] AUDIO_INC_800    = ((AUDIO_ACC_WIDTH*2)'(AUDIO_RATE) <<< AUDIO_ACC_WIDTH) / PIXEL_MODE2;
 localparam [AUDIO_ACC_WIDTH-1:0] AUDIO_INC_720P   = ((AUDIO_ACC_WIDTH*2)'(AUDIO_RATE) <<< AUDIO_ACC_WIDTH) / 74100000;
 wire [AUDIO_ACC_WIDTH-1:0] AUDIO_INC = (video_mode_pix == 2'b11) ? AUDIO_INC_720P :
                                        (video_mode_pix == 2'b10) ? AUDIO_INC_800 : AUDIO_INC_NATIVE;
@@ -1309,7 +1316,13 @@ hdmi #(
 // RTG scanout. The 800x600 profile is what the video mode logic selects when
 // the rtg display is enabled.
 rtg_video #(
+`ifdef VMODE_1024_VESA
+  .H_TOTAL(1344), .H_ACTIVE(1024), .V_TOTAL(806), .V_ACTIVE(768)
+`elsif VMODE_1024_RB
+  .H_TOTAL(1184), .H_ACTIVE(1024), .V_TOTAL(802), .V_ACTIVE(768)
+`else
   .H_TOTAL(1056), .H_ACTIVE(800), .V_TOTAL(628), .V_ACTIVE(600)
+`endif
 ) rtg_video (
   .clk_bus   ( clk_28m     ),
   .reset_bus ( rst_28m     ),

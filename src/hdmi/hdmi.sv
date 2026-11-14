@@ -99,7 +99,16 @@ wire [102:0]  timing_amiga = pal_mode?{  htiming0, vtiming0, cea0 }:
 
 `ifdef HDMI_VIDEO_MODES
 //                                  start     frame   screen s_start s_len  | frame  screen vs_start vs_len | cea
+`ifdef VMODE_1024_VESA
+wire [102:0] timing_800x600  = { 11'd0, 11'd1344, 11'd1024, 11'd24, 11'd136, 10'd806, 10'd768, 10'd3, 10'd6, 8'd0 }; // 1024x768 VESA DMT, -/- sync
+localparam [1:0] INVERT_MODE2 = 2'b11;
+`elsif VMODE_1024_RB
+wire [102:0] timing_800x600  = { 11'd0, 11'd1184, 11'd1024, 11'd48, 11'd32,  10'd802, 10'd768, 10'd3, 10'd4, 8'd0 }; // 1024x768 CVT-RB (v back porch 27 for 60Hz), +h/-v
+localparam [1:0] INVERT_MODE2 = 2'b10;
+`else
 wire [102:0] timing_800x600  = { 11'd0, 11'd1056, 11'd800,  11'd40, 11'd128, 10'd628, 10'd600, 10'd1, 10'd4, 8'd0 }; // VESA, no CEA VIC
+localparam [1:0] INVERT_MODE2 = 2'b00;
+`endif
 wire [102:0] timing_1280x720 = { 11'd0, 11'd1650, 11'd1280, 11'd110, 11'd40, 10'd750, 10'd720, 10'd5, 10'd5, 8'd4 }; // CEA VIC 4
 
 wire         ext_mode = video_mode[1];
@@ -128,8 +137,13 @@ wire [9:0] vsync_pulse_size   = timing[17: 8];
 
 wire [7:0] cea                = timing[7:0]; 
    
-// Amiga timing and PAL/NTSC CEA modes use negative sync, 800x600 and 720p positive sync
-assign invert = ext_mode ? 2'b00 : 2'b11;
+// Amiga timing and PAL/NTSC CEA modes use negative sync, 800x600 and 720p positive sync,
+// 1024x768 as given above (invert[0] hsync, invert[1] vsync)
+`ifdef HDMI_VIDEO_MODES
+assign invert = (video_mode == 2'b10) ? INVERT_MODE2 : ext_mode ? 2'b00 : 2'b11;
+`else
+assign invert = 2'b11;
+`endif
 
 reg [10:0] cx;
 reg [9:0] cy;

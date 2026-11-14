@@ -18,6 +18,16 @@ Other variants: `vmodes` (video mode logic only, native video), `test800x600`,
 `test720p` (test patterns), `rtgled` and `rtgdbg` (bring-up variants, see the
 header of `scripts/build_020_video.tcl`).
 
+1024x768 instead of 800x600 (build-time choice, define `VMODE_1024_RB` or
+`VMODE_1024_VESA`, test patterns `test1024rb` and `test1024`):
+
+| variant | timing | pixel clock | PLL |
+|---|---|---|---|
+| `VMODE_1024_RB` | 1184x802, CVT reduced blanking (+h/-v), 60.0 Hz | 57.00 MHz | x10, ODIV 2 |
+| `VMODE_1024_VESA` | 1344x806, VESA DMT (-h/-v), 60.0 Hz | 64.98 MHz | x57 / IDIV 5, ODIV 2 |
+
+`sim/run_vmode.sh [VMODE_1024_RB|VMODE_1024_VESA]` checks the sync generator.
+
 ## Registers (CPU window `$B80000`)
 
 | offset      | function |

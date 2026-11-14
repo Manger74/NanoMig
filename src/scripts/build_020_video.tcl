@@ -6,6 +6,8 @@
 #   gw_sh scripts/build_020_video.tcl vmodes       native video, video mode logic only
 #   gw_sh scripts/build_020_video.tcl test800x600  free running 800x600 test pattern
 #   gw_sh scripts/build_020_video.tcl test720p     free running 1280x720 test pattern
+#   gw_sh scripts/build_020_video.tcl test1024rb   free running 1024x768 test pattern, 57MHz reduced blanking
+#   gw_sh scripts/build_020_video.tcl test1024     free running 1024x768 test pattern, 65MHz VESA
 #   gw_sh scripts/build_020_video.tcl rtg          RTG scanout (400x300 8 bit shown on 800x600)
 #   gw_sh scripts/build_020_video.tcl rtgled       rtg, leds show the rtg window accesses (bisect)
 #   gw_sh scripts/build_020_video.tcl rtgdbg       rtg, cpu register window disconnected (bisect)
@@ -19,11 +21,13 @@ switch -- $variant {
     vmodes      { set defines {HDMI_VIDEO_MODES};                                                  set period "7"   ; set wave "{0 3}"   }
     test800x600 { set defines {HDMI_VIDEO_MODES HDMI_EXT_TEST_PATTERN RTG_TEST_800X600};           set period "5.0" ; set wave "{0 2.5}" }
     test720p    { set defines {HDMI_VIDEO_MODES HDMI_EXT_TEST_PATTERN RTG_TEST_720P};              set period "2.7" ; set wave "{0 1.3}" }
+    test1024rb  { set defines {HDMI_VIDEO_MODES HDMI_EXT_TEST_PATTERN RTG_TEST_800X600 VMODE_1024_RB};   set period "3.5" ; set wave "{0 1.75}" }
+    test1024    { set defines {HDMI_VIDEO_MODES HDMI_EXT_TEST_PATTERN RTG_TEST_800X600 VMODE_1024_VESA}; set period "3.0" ; set wave "{0 1.5}" }
     rtg         { set defines {HDMI_VIDEO_MODES ENABLE_RTG};                                       set period "5.0" ; set wave "{0 2.5}" }
     rtgled      { set defines {HDMI_VIDEO_MODES ENABLE_RTG RTG_DBG_LED};                           set period "5.0" ; set wave "{0 2.5}" }
     rtgdbg      { set defines {HDMI_VIDEO_MODES ENABLE_RTG RTG_DBG_NOBUS};                         set period "5.0" ; set wave "{0 2.5}" }
     default {
-        puts "Usage: gw_sh scripts/build_020_video.tcl <vmodes|test800x600|test720p|rtg|rtgled|rtgdbg>"
+        puts "Usage: gw_sh scripts/build_020_video.tcl <vmodes|test800x600|test720p|test1024rb|test1024|rtg|rtgled|rtgdbg>"
         exit 1
     }
 }

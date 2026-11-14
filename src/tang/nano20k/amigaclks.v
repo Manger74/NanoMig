@@ -74,15 +74,31 @@ defparam sysclk_inst.DEVICE = "GW2AR-18C";
 //   vidmode  FBDIV ODIV   VCO     TMDS     pixel (TMDS/5)
 //     01       5    4    570.0   142.5     28.50
 //     00      10    2    570.0   285.0     57.00
-//     10       7    4    798.0   199.5     39.90
+//     10       7    4    798.0   199.5     39.90   800x600
+//     10      10    2    570.0   285.0     57.00   1024x768 reduced blanking (VMODE_1024_RB)
+//     10    57/5    2    649.8   324.9     64.98   1024x768 VESA (VMODE_1024_VESA, IDIV 5)
 //     11      13    2    741.0   370.5     74.10
 reg [5:0] fbdsel;
 reg [5:0] odsel;
 
+// The input divider is only dynamic for the 1024x768 VESA timing (IDSEL = 64 - IDIV,
+// same coding as FBDSEL). All other builds keep the fixed IDIV of 1.
+`ifdef VMODE_1024_VESA
+wire [5:0] idsel = (vidmode == 2'b10) ? 6'b111011 : 6'b111111;
+`else
+wire [5:0] idsel = 6'b000000;
+`endif
+
 always @(*) begin
     case (vidmode)
         2'b00:   begin fbdsel = 6'b110110; odsel = 6'b111111; end
-        2'b10:   begin fbdsel = 6'b111001; odsel = 6'b111110; end
+`ifdef VMODE_1024_VESA
+        2'b10:   begin fbdsel = 6'b000111; odsel = 6'b111111; end   // x57 (IDIV 5 below)
+`elsif VMODE_1024_RB
+        2'b10:   begin fbdsel = 6'b110110; odsel = 6'b111111; end   // x10
+`else
+        2'b10:   begin fbdsel = 6'b111001; odsel = 6'b111110; end   // x7
+`endif
         2'b11:   begin fbdsel = 6'b110011; odsel = 6'b111111; end
         default: begin fbdsel = 6'b111011; odsel = 6'b111110; end   // 2'b01 native
     endcase
@@ -130,7 +146,7 @@ rPLL tmdsclk_inst (
     .CLKIN(clk_28_i),
     .CLKFB(1'b0),
     .FBDSEL(fbdsel),
-    .IDSEL(6'b0000000),
+    .IDSEL(idsel),
     .ODSEL(odsel),
     .PSDA(4'b0000),
     .DUTYDA(4'b0000),
@@ -138,7 +154,11 @@ rPLL tmdsclk_inst (
 );
 
 defparam tmdsclk_inst.FCLKIN = "28.5";
+`ifdef VMODE_1024_VESA
+defparam tmdsclk_inst.DYN_IDIV_SEL = "true";
+`else
 defparam tmdsclk_inst.DYN_IDIV_SEL = "false";
+`endif
 defparam tmdsclk_inst.IDIV_SEL = 0;
 defparam tmdsclk_inst.DYN_FBDIV_SEL = "true";
 defparam tmdsclk_inst.FBDIV_SEL = 4;
