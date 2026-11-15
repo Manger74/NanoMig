@@ -12,6 +12,7 @@
 // =========================================================================
 
 `define ENABLE_TG68K
+`define ENABLE_020_ONLY // hard-wire the TG68K to 68020 mode, OSD CPU selection ignored (saves logic)
 `define ENABLE_AGA   // offer the AGA chipset in the menu
 `define CPU_SLOW14   // run TG68K at 14MHz effective (A1200 speed) for timing closure
 `define ENABLE_CACHE // MiSTer cpu cache between the cpu and the sdram (cached kickstart + fast ram)
@@ -724,7 +725,11 @@ assign ram_din = sdram_dout;
 
 // pack config values into minimig config
 wire [5:0] chipset_config = { 1'b0,osd_chipset,osd_video_mode,1'b0 };
+`ifdef ENABLE_020_ONLY
+wire [1:0] cpu_config = 2'b11;
+`else
 wire [1:0] cpu_config = { |osd_cpu ? 2'b11 : 2'b00 };
+`endif
 wire [7:0] memory_config = { 4'b0_000, osd_slowmem, osd_chipmem };   
 wire [2:0] fastram_config = { 1'b0, osd_fastmem };   
 wire [2:0] turbo_config = { osd_turbo };
