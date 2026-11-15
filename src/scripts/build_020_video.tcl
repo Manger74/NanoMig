@@ -55,6 +55,13 @@ set script [string map [list \
     "add_file tang/nano20k/nanomig_020.sdc" "add_file $sdc_name" \
     "nanomig_20" "nanomig_20_$variant"] $script]
 
+# placement strategy of the video builds: 0 (build_020.tcl uses 1), the environment
+# variable PLACE_OPTION overrides it, e.g. PLACE_OPTION=2 gw_sh scripts/build_020_video.tcl rtg
+set place 0
+if {[info exists ::env(PLACE_OPTION)]} { set place $::env(PLACE_OPTION) }
+set script [string map [list "set_option -place_option 1" "set_option -place_option $place"] $script]
+puts "place_option $place"
+
 # the rtg scanout is an additional source file
 if {[lsearch -exact $defines "ENABLE_RTG"] >= 0} {
     set script [string map [list "add_file nanomig.v" "add_file nanomig.v\nadd_file rtg/rtg_video.sv"] $script]
