@@ -104,6 +104,9 @@ module gary
 `ifdef ENABLE_TOCCATA
 	output       sel_toccata, //select $E9xxxx (or whatever's specified by toccata_base)
 `endif
+`ifdef ENABLE_A314
+	output       sel_a314, //select $D8xxxx (A314 clockport interface)
+`endif
 	output reg   rom_readonly //when zero allows to write to $fc-$ff, blocks effect of kick256kmirror.  
 );
 
@@ -181,10 +184,15 @@ assign sel_rtc   = cpu_address_in[23:16]==8'b1101_1100;                   //RTC 
 `else
 wire sel_rtc = 1'b0;   // dummy for sel_reg
 `endif
-`ifndef DISABLE_IDE
-assign sel_reg   = cpu_address_in[23:21]==3'b110 ? ~(|t_sel_slow | sel_rtc | sel_ide | sel_gayle) : 1'b0;	//chip registers at $DF0000 - $DFFFFF
+`ifdef ENABLE_A314
+assign sel_a314  = cpu_address_in[23:16]==8'b1101_1000;                   //A314 clockport registers at $D80000 - $D8FFFF
 `else
-assign sel_reg   = cpu_address_in[23:21]==3'b110 ? ~(|t_sel_slow | sel_rtc) : 1'b0;	//chip registers at $DF0000 - $DFFFFF
+wire sel_a314 = 1'b0;  // dummy for sel_reg
+`endif
+`ifndef DISABLE_IDE
+assign sel_reg   = cpu_address_in[23:21]==3'b110 ? ~(|t_sel_slow | sel_rtc | sel_a314 | sel_ide | sel_gayle) : 1'b0;	//chip registers at $DF0000 - $DFFFFF
+`else
+assign sel_reg   = cpu_address_in[23:21]==3'b110 ? ~(|t_sel_slow | sel_rtc | sel_a314) : 1'b0;	//chip registers at $DF0000 - $DFFFFF
 `endif
 
 assign sel_cia   = cpu_address_in[23:16]==8'hBF; // $BFxxxx

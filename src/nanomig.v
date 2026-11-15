@@ -5,7 +5,12 @@
 //   copper and other dma runs on hpos[0] == 1
 //   cpu runs in hpos[0] == 0
 // -> run cpu on unused hpos[0] == 1 for turbo
-module nanomig (
+module nanomig #(
+   // 1: bypass the scandoubler for native progressive video (programmed beam,
+   // e.g. DblPAL). Only for boards whose video path supports it (video_analyzer
+   // and hdmi with NATIVE=1); all other boards keep the scandoubler always on.
+   parameter NATIVE = 0
+) (
    input	 clk_sys,
    input	 reset,
    input	 por,
@@ -26,6 +31,8 @@ module nanomig (
    output [3:0]	 r,
    output [3:0]	 g,
    output [3:0]	 b,
+   output	 native,       // 1: video is native progressive (short lines), scandoubler bypassed
+   output [10:0] native_width, // native line length in 28MHz clocks
 
    input [7:0]	 memory_config,
    input [2:0]	 fastram_config,
@@ -52,6 +59,25 @@ module nanomig (
 
    // explicit ACK after consuming keyboard event
    output       keyboard_ack,
+
+`ifdef ENABLE_PLIP
+   // virtual parallel port (plipbox): frames to/from the MCU, SPI target 5
+   input	 net_strobe,
+   input	 net_start,
+   input [7:0]	 net_din,
+   output [7:0]	 net_dout,
+   output	 net_irq,
+   input	 net_iack,
+`endif
+`ifdef ENABLE_A314
+   // A314 clockport interface: shared memory and interrupt bits for the MCU, SPI target 6
+   input	 a314_strobe,
+   input	 a314_start,
+   input [7:0]	 a314_din,
+   output [7:0]	 a314_dout,
+   output	 a314_irq,
+   input	 a314_iack,
+`endif
 
    // UART/RS232 for e.g. DiagROM or MIDI
    output	 uart_tx,
@@ -294,6 +320,13 @@ always @(posedge clk_sys) begin
 end
 `endif
 
+`ifdef A314_FAST
+// A314 clockport accesses of the CPU, from cpu_wrapper straight to a314_cp in minimig
+wire       a314_f_sel, a314_f_end, a314_f_we;
+wire [1:0] a314_f_reg;
+wire [7:0] a314_f_din, a314_f_dout;
+`endif
+
 cpu_wrapper cpu_wrapper
 (
 	.reset        (cpu_rst         ),
@@ -339,6 +372,15 @@ cpu_wrapper cpu_wrapper
 	.ramdin       (ram_din         ),
 	.ramready     (ram_ready       ),
 	.ramshared    (                ),
+
+`ifdef A314_FAST
+	.a314_sel     (a314_f_sel      ),
+	.a314_end     (a314_f_end      ),
+	.a314_we      (a314_f_we       ),
+	.a314_reg     (a314_f_reg      ),
+	.a314_din     (a314_f_din      ),
+	.a314_dout    (a314_f_dout     ),
+`endif
 
 	//custom CPU signals
 	.cpustate     (cpu_state       ),
@@ -1513,6 +1555,65 @@ uart_port uart_port (
 );
 `endif
 
+`ifdef ENABLE_A314
+wire [12:0] a314_h_addr;
+wire        a314_h_we, a314_h_irq_we, a314_pi_irq;
+wire [7:0]  a314_h_wdata, a314_h_rdata, a314_h_irq_data;
+
+a314_host a314_host (
+	.clk          (clk_sys        ),
+	.reset        (por            ),
+	.data_strobe  (a314_strobe    ),
+	.data_start   (a314_start     ),
+	.data_in      (a314_din       ),
+	.data_out     (a314_dout      ),
+	.irq          (a314_irq       ),
+	.iack         (a314_iack      ),
+	.h_addr       (a314_h_addr    ),
+	.h_we         (a314_h_we      ),
+	.h_wdata      (a314_h_wdata   ),
+	.h_rdata      (a314_h_rdata   ),
+	.h_irq_we     (a314_h_irq_we  ),
+	.h_irq_data   (a314_h_irq_data),
+	.pi_irq       (a314_pi_irq    )
+);
+`endif
+
+`ifdef ENABLE_PLIP
+wire        plip_en, plip_loop, plip_h_we, plip_h_commit, plip_h_release;
+wire        plip_tx_valid, plip_rx_valid;
+wire [10:0] plip_h_waddr, plip_h_len, plip_h_raddr, plip_rx_len;
+wire [7:0]  plip_h_wdata, plip_h_rdata;
+wire [31:0] plip_stat_rx, plip_stat_tx, plip_rt_clks;
+
+plip_host plip_host (
+	.clk          (clk_sys        ),
+	.reset        (por            ),
+	.data_strobe  (net_strobe     ),
+	.data_start   (net_start      ),
+	.data_in      (net_din        ),
+	.data_out     (net_dout       ),
+	.irq          (net_irq        ),
+	.iack         (net_iack       ),
+	.plip_en      (plip_en        ),
+	.plip_loop    (plip_loop      ),
+	.h_we         (plip_h_we      ),
+	.h_waddr      (plip_h_waddr   ),
+	.h_wdata      (plip_h_wdata   ),
+	.h_commit     (plip_h_commit  ),
+	.h_len        (plip_h_len     ),
+	.tx_valid     (plip_tx_valid  ),
+	.h_raddr      (plip_h_raddr   ),
+	.h_rdata      (plip_h_rdata   ),
+	.rx_valid     (plip_rx_valid  ),
+	.rx_len       (plip_rx_len    ),
+	.h_release    (plip_h_release ),
+	.stat_rx      (plip_stat_rx   ),
+	.stat_tx      (plip_stat_tx   ),
+	.rt_clks      (plip_rt_clks   )
+);
+`endif
+
 minimig minimig
 (
 	//m68k pins
@@ -1577,6 +1678,43 @@ minimig minimig
 	.dsr          (1'b1             ), // RS232 Data Set Ready (1=ready)
 	.cd           (1'b1             ), // RS232 Carrier Detect (1=carrier detected)
 	.ri           (1'b1             ), // RS232 Ring Indicator (1=idle/not ringing)
+`ifdef ENABLE_PLIP
+	// virtual parallel port, host side from plip_host (MCU)
+	.plip_en        (plip_en        ),
+	.plip_loop      (plip_loop      ),
+	.plip_h_we      (plip_h_we      ),
+	.plip_h_waddr   (plip_h_waddr   ),
+	.plip_h_wdata   (plip_h_wdata   ),
+	.plip_h_commit  (plip_h_commit  ),
+	.plip_h_len     (plip_h_len     ),
+	.plip_tx_valid  (plip_tx_valid  ),
+	.plip_h_raddr   (plip_h_raddr   ),
+	.plip_h_rdata   (plip_h_rdata   ),
+	.plip_rx_valid  (plip_rx_valid  ),
+	.plip_rx_len    (plip_rx_len    ),
+	.plip_h_release (plip_h_release ),
+	.plip_stat_rx   (plip_stat_rx   ),
+	.plip_stat_tx   (plip_stat_tx   ),
+	.plip_rt_clks   (plip_rt_clks   ),
+`endif
+`ifdef ENABLE_A314
+	// A314 clockport interface, host side from a314_host (MCU)
+	.a314_h_addr    (a314_h_addr    ),
+	.a314_h_we      (a314_h_we      ),
+	.a314_h_wdata   (a314_h_wdata   ),
+	.a314_h_rdata   (a314_h_rdata   ),
+	.a314_h_irq_we  (a314_h_irq_we  ),
+	.a314_h_irq_data(a314_h_irq_data),
+	.a314_pi_irq    (a314_pi_irq    ),
+`ifdef A314_FAST
+	.a314_f_sel     (a314_f_sel     ),
+	.a314_f_end     (a314_f_end     ),
+	.a314_f_we      (a314_f_we      ),
+	.a314_f_reg     (a314_f_reg     ),
+	.a314_f_din     (a314_f_din     ),
+	.a314_f_dout    (a314_f_dout    ),
+`endif
+`endif
 
 	//I/O
 	._joy1        (~JOY0            ), // joystick 1 [fire4,fire3,fire2,fire,up,down,left,right] (default mouse port)
@@ -1655,6 +1793,31 @@ minimig minimig
  	.sdc_byte_out_data  ( sdc_byte_out_data_fdc ) 
 );
 
+// Native progressive video: a programmed beam with short lines (BEAMCON0, e.g.
+// the DblPAL monitor driver, 31kHz) is already scandoubled by the chipset, so
+// the scandoubler is bypassed. A normal PAL/NTSC line has 227 colour clocks.
+assign native       = (NATIVE != 0) && (htotal[8:1] < 8'd180);
+assign native_width = ({3'b000, htotal[8:1]} + 11'd1) << 3;  // 8 clocks per colour clock
+
+reg [3:0] nat_r, nat_g, nat_b;
+reg	  nat_hs = 1'b1, nat_vs = 1'b1;
+always @(posedge clk_sys) begin
+	nat_r  <= r_in;
+	nat_g  <= g_in;
+	nat_b  <= b_in;
+	nat_hs <= hs_in;
+	nat_vs <= vs_in;
+end
+
+wire [3:0] amb_r, amb_g, amb_b;
+wire	   amb_hs, amb_vs;
+
+assign r  = native ? nat_r  : amb_r;
+assign g  = native ? nat_g  : amb_g;
+assign b  = native ? nat_b  : amb_b;
+assign hs = native ? nat_hs : amb_hs;
+assign vs = native ? nat_vs : amb_vs;
+
 Amber AMBER
 (
 	.clk28m(clk_sys),
@@ -1670,11 +1833,11 @@ Amber AMBER
 	._hsync_in(hs_in),		//horizontal synchronisation in
 	._vsync_in(vs_in),		//vertical synchronisation in
 	._csync_in(1'b1),		//composite synchronization in, only used if dblscan==0
-	.red_out(r), 		        //red componenent video out
-	.green_out(g),  	        //green component video out
-	.blue_out(b),		        //blue component video out
-	._hsync_out(hs),		//horizontal synchronisation out
-	._vsync_out(vs)			//vertical synchronisation out
+	.red_out(amb_r), 	        //red componenent video out
+	.green_out(amb_g),  	        //green component video out
+	.blue_out(amb_b),		//blue component video out
+	._hsync_out(amb_hs),		//horizontal synchronisation out
+	._vsync_out(amb_vs)		//vertical synchronisation out
  );
     
 endmodule
