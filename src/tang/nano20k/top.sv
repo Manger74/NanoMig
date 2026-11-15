@@ -610,6 +610,16 @@ sysctrl #(
    
 // digital 12 bit video
 wire hs_n, vs_n;
+wire native;
+wire [10:0] native_width;
+
+// native progressive video (DblPAL/DblNTSC) bypasses the scandoubler,
+// only supported on the HDMI output
+`ifndef DISABLE_HDMI
+localparam NATIVE_VIDEO = 1;
+`else
+localparam NATIVE_VIDEO = 0;
+`endif
 wire [3:0] red;
 wire [3:0] green;
 wire [3:0] blue;
@@ -730,7 +740,9 @@ wire [3:0] video_config = { osd_video_filter, osd_video_scanlines };
 // to GAYLE and set ide_config[5] to 0 to improve performance
 wire [5:0] ide_config = { 5'b10000, osd_ide_enable };   
    
-nanomig nanomig
+nanomig #(
+ .NATIVE(NATIVE_VIDEO)
+) nanomig
 (
  .clk_sys(clk_28m),
  .reset(nanomig_reset),
@@ -763,6 +775,8 @@ nanomig nanomig
  .r(red),
  .g(green),
  .b(blue),
+ .native(native),             // native progressive video (scandoubler bypassed)
+ .native_width(native_width),
 
  .audio_left(audio_left),
  .audio_right(audio_right),
@@ -1103,11 +1117,16 @@ flash flash (
 
 /* -------------------- video and audio -------------------- */
 wire vreset, vpal, interlace, short_frame;
+wire [9:0] native_lines;
 
-video_analyzer video_analyzer (
+video_analyzer #(
+    .NATIVE(NATIVE_VIDEO)
+) video_analyzer (
     .clk         ( clk_28m   ),
     .hs          ( hs_n      ),
     .vs          ( vs_n      ),
+    .native      ( native    ),
+    .lines       ( native_lines ),
     .pal         ( vpal      ),
     .short_frame ( short_frame ),
     .screen      ( osd_video_screen ),
@@ -1217,7 +1236,8 @@ hdmi #(
     .AUDIO_RATE(AUDIO_RATE),
     .AUDIO_BIT_WIDTH(16),
     .VENDOR_NAME( { "MiSTle", 16'd0} ),
-    .PRODUCT_DESCRIPTION( {"Nanomig", 72'd0} )
+    .PRODUCT_DESCRIPTION( {"Nanomig", 72'd0} ),
+    .NATIVE(1)
 ) hdmi(
   .clk_pixel_x5(clk_pixel_x5),
   .clk_pixel(clk_pixel),
@@ -1230,6 +1250,9 @@ hdmi #(
   .short_frame ( short_frame ),
   .screen ( osd_video_screen ),
   .interlace(interlace),
+  .native(native),
+  .native_width(native_width),
+  .native_height(native_lines),
   .reset(vreset),    // signal to synchronize HDMI
 
   .rgb( { video_red, 2'b00, video_green, 2'b00, video_blue, 2'b00 } )
