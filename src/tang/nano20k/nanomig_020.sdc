@@ -17,7 +17,7 @@ set_multicycle_path -from [get_clocks {clk28}] -to [get_clocks {clk85}] -hold 3
 set_multicycle_path -from [get_clocks {clk85}] -to [get_clocks {clk28}] -start 2
 set_multicycle_path -from [get_clocks {clk85}] -to [get_clocks {clk28}] -hold -start 1
 
-set_false_path -from [get_cells {sysctrl/system_cpu*}]
+// set_false_path -from [get_cells {sysctrl/system_cpu*}]   // register is removed with ENABLE_020_ONLY (TA2003)
 set_false_path -from [get_cells {sysctrl/system_chipset*}]
 set_false_path -from [get_cells {sysctrl/system_video*}]
 set_false_path -from [get_cells {sysctrl/system_chipmem*}]
