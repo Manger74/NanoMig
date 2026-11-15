@@ -125,15 +125,6 @@ wire clk_pixel_x5;
 wire pll_lock;   
 wire video_locked;
 
-// Native progressive video (DblPAL/DblNTSC, scandoubler bypassed): left out in the RTG
-// builds, RTG + A314 + native video do not fit into the GW2AR-18 together (PR0003).
-// Without it these screen modes go through the scandoubler like on the other boards.
-`ifdef ENABLE_RTG
-localparam NATIVE_VIDEO = 0;
-`else
-localparam NATIVE_VIDEO = 1;
-`endif
-
 // HDMI video mode: 2'b01 = native Amiga video (28.5MHz pixel clock),
 // 2'b10 = 800x600@60, 2'b11 = 1280x720@60 (see amigaclks.v and hdmi.sv).
 // Until RTG takes over, the extended modes are only selectable for test builds
@@ -779,7 +770,7 @@ wire [3:0] video_config = { osd_video_filter, osd_video_scanlines };
 wire [5:0] ide_config = { 5'b10000, osd_ide_enable };   
    
 nanomig #(
- .NATIVE(NATIVE_VIDEO)
+ .NATIVE(1)
 ) nanomig
 (
  .clk_sys(clk_28m),
@@ -1323,7 +1314,7 @@ wire [1:0] va_screen = osd_video_screen;
 `endif
 
 video_analyzer #(
-    .NATIVE(NATIVE_VIDEO)
+    .NATIVE(1)
 ) video_analyzer (
     .clk         ( clk_28m   ),
     .hs          ( hs_n      ),
@@ -1365,7 +1356,7 @@ hdmi #(
     .AUDIO_BIT_WIDTH(16),
     .VENDOR_NAME( { "MiSTle", 16'd0} ),
     .PRODUCT_DESCRIPTION( {"Nanomig", 72'd0} ),
-    .NATIVE(NATIVE_VIDEO)
+    .NATIVE(1)
 ) hdmi(
   .clk_pixel_x5(clk_pixel_x5),
   .clk_pixel(clk_pixel),
