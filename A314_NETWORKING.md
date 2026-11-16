@@ -54,7 +54,7 @@ edit **DEVS:Internet/name_resolution** in TextEdit
 NAMESERVER 1.1.1.1
 ```
 
-### 3. Amiga: Plipbox
+### 3. Amiga: A314
 
 download and unzip **plipbox-0.6.zip**  
 
