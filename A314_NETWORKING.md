@@ -17,8 +17,7 @@ The Amiga's address must be unused in your LAN.
 
 ### 1. Core and Companion
 
-- Core: the 020 build (NanoMig 1200) with `ENABLE_A314` and `A314_FAST` in `top_020.sv` (on by default in this branch).
-- Companion: firmware with A314 support (branch `COMPANION_LATEST` of the FPGA-Companion).
+Both must be enabled for A314 networking.
 
 ### 2. Connect the Companion to your network by editing config.ini on the SD-Card
 
