@@ -107,7 +107,7 @@ From a PC, **ping 192.168.0.66** reaches the Amiga and **ping 192.168.0.33** the
 Use the Companion's LAN address **192.168.0.33**.  
 Both work from the Amiga over A314 and from a PC on the LAN.  
 
-**FTP** (port 21) gives access to the Companion's SD card.
+**FTP** (port 21) gives access to the Companion's SD card.  
 Any user name and password are accepted. Passive mode only:  
   ```
   ftp 192.168.0.33
