@@ -86,6 +86,13 @@ Installation (as for MiSTle):
    viewport), 400x300 (2x2 repeat, up to 288 rows), 640x480 centered, ... in CLUT,
    RGB565 and RGB555.
 
+The driver runs with Picasso96 2.x (rtg.library 40.x, Kickstart 3.0+) and 3.x. Screen
+dragging (`SetSplitPosition`, `gbi_YSplit`) is only used by P96 3.x: the BoardInfo of
+rtg.library 40.3993 is 1624 bytes, `gbi_YSplit` (offset 1636) lies behind it, so the
+driver keeps the split row in its CardData and touches `gbi_YSplit` only when P96 3.x
+calls `SetSplitPosition`. With the P96 2.0 installer choose any board and then change
+`BOARDTYPE=uaegfx` to `BOARDTYPE=minimig` in the monitor icon.
+
 `amiga/rtgdemo.asm` is a small test program that needs no Picasso96 (XOR pattern
 400x300 in 8 bit, left mouse button ends).
 

@@ -37,6 +37,9 @@ CardData_VRepeat = gbi_CardData+28
 CardData_VOrigin = gbi_CardData+30
 CardData_VStop = gbi_CardData+32
 CardData_SourceWidth = gbi_CardData+34
+; split row as last passed to SetSplitPosition. gbi_YSplit lies past the end of the
+; BoardInfo of rtg.library 40.x (P96 2.x, 1624 bytes), only P96 3.x calls SetSplitPosition
+CardData_YSplit = gbi_CardData+36
 
 ; HDMI-timed RTG registers, relative to $B80100.
 RTG_STATUS = $0c       ; read: blank, pending, enabled, active (bits 0..3)
@@ -728,8 +731,8 @@ SetGC:
 	lsr.w #4,d0
 	movea.l gbi_RegisterBase(a0),a1
 	move.w d0,RTG_STRIDE(a1)
-	move.w gbi_YSplit(a0),d0
-	bsr SetSplitPosition
+	move.w CardData_YSplit(a0),d0
+	bsr ApplySplit
 	bra.s .done
 .invalid:
 	clr.w RTG_DISPLAY_SWITCH(a1)
@@ -1186,6 +1189,8 @@ GetCompatibleFormats:
 SetSplitPosition:
 ; a0: BoardInfo, d0: first secondary-framebuffer row; 0 disables dragging.
 	move.w d0,gbi_YSplit(a0)
+	move.w d0,CardData_YSplit(a0)
+ApplySplit:
 	movea.l gbi_RegisterBase(a0),a1
 	tst.w d0
 	beq.s .disable
