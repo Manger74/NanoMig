@@ -37,9 +37,9 @@
 `default_nettype none
 
 module rtg_video #(
-  parameter H_TOTAL  = 1056,
+  parameter [10:0] H_TOTAL  = 1056,
   parameter H_ACTIVE = 800,
-  parameter V_TOTAL  = 628,
+  parameter  [9:0] V_TOTAL  = 628,
   parameter V_ACTIVE = 600
 ) (
   // ------------------------ register bus (clk_bus) -------------------------
@@ -69,7 +69,7 @@ module rtg_video #(
 );
 
 // the pixel pipeline is this many clocks long, see the lookahead below
-localparam LAT = 4;
+localparam [10:0] LAT = 4;
 
 // ===========================================================================
 // ================================ bus side ================================
@@ -258,9 +258,9 @@ always @(posedge clk_pix) begin
       p_vrep   <= reg_rep[3:2];
       p_hs     <= { reg_hstart, 4'd0 };
       p_he     <= { reg_hstop,  4'd0 };
-      p_vs     <= { reg_vstart, 4'd0 };
-      p_vs2    <= (reg_vstart[5:0] == 6'd0) ? V_TOTAL - 2 : { reg_vstart[5:0], 4'd0 } - 10'd2;
-      p_ve     <= { reg_vstop,  4'd0 };
+      p_vs     <= { reg_vstart[5:0], 4'd0 };
+      p_vs2    <= (reg_vstart[5:0] == 6'd0) ? V_TOTAL - 10'd2 : { reg_vstart[5:0], 4'd0 } - 10'd2;
+      p_ve     <= { reg_vstop[5:0],  4'd0 };
       p_stride <= reg_stride;
       p_bursts <= reg_bursts;
       p_base   <= reg_base;
@@ -306,7 +306,7 @@ end
 // ---- line buffer: 2 x 512 words of 32 bit ----
 reg [31:0] lb[0:1023] /* synthesis syn_ramstyle="block_ram" */;
 
-wire [8:0] rword = p_clut ? { 2'b00, rx[9:2] } : { 1'b0, rx[9:1] };
+wire [8:0] rword = p_clut ? { 1'b0, rx[9:2] } : { 1'b0, rx[9:1] };
 wire [9:0] raddr = { rdbuf, rword };
 
 reg [31:0] lb_q;
@@ -410,7 +410,7 @@ initial begin
   hsub = 2'd0; rx = 10'd0; vblank_pix = 1'b0; active_pix = 1'b0;
   vblank_sync = 2'd0; active_sync = 2'd0; r_addr = 19'd0; f_bursts = 8'd0;
   rgb = 24'd0;
-  p_hrep = 2'd0; p_vrep = 2'd0; p_hs = 11'd0; p_he = 11'd0; p_vs = 10'd0; p_vs2 = V_TOTAL - 2; p_ve = 10'd0;
+  p_hrep = 2'd0; p_vrep = 2'd0; p_hs = 11'd0; p_he = 11'd0; p_vs = 10'd0; p_vs2 = V_TOTAL - 10'd2; p_ve = 10'd0;
   p_stride = 12'd0; p_bursts = 8'd0; p_base = 19'd0; p_clut = 1'b0; p_565 = 1'b1;
   wr_d = 1'b0;
 end
