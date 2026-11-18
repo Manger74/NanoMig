@@ -1,26 +1,10 @@
 `timescale 1ns/1ps
-// display raster: 800x600 (default) or 1024x768 (define VMODE_1024_RB or VMODE_1024_VESA)
-`ifdef VMODE_1024_VESA
-  `define VMODE_1024
-  `define W 1024
-  `define H 768
-  `define HT 1344
-  `define VT 806
-  `define TPIX 7.695
-`elsif VMODE_1024_RB
-  `define VMODE_1024
-  `define W 1024
-  `define H 768
-  `define HT 1184
-  `define VT 802
-  `define TPIX 8.772
-`else
-  `define W 800
-  `define H 600
-  `define HT 1056
-  `define VT 628
-  `define TPIX 12.53
-`endif
+// display raster 800x600
+`define W 800
+`define H 600
+`define HT 1056
+`define VT 628
+`define TPIX 12.53
 // full chain test: cpu register writes -> rtg_video -> sdram scanout port -> sdram model, hdmi-like capture
 module tb_rtg;
   reg clk_mem = 0, clk_pix = 0, clk_bus = 0;
@@ -207,55 +191,6 @@ always #(`TPIX) if (pix_run) clk_pix = ~clk_pix;   // pixel clock of the raster
     fb_to_model();
     repeat (4) @(posedge clk_bus);
 
-`ifdef VMODE_1024
-    // test 1: 8 bit 1024x768 1x1, whole screen, stride 1024: needs 43% of the slots
-    c_bpp = 8; c_fmt = 1; c_hrep = 1; c_vrep = 1; c_hs = 0; c_he = 64; c_vs = 0; c_ve = 48;
-    c_stride_b = 1024; c_bursts = 64; c_base = FB_BASE;
-    for (sy = 0; sy < 768; sy = sy + 1) for (sx = 0; sx < 1024; sx = sx + 1) fb[sy*1024 + sx] = (sx*3 + sy*7 + (sx>>4)*13 + (sy>>3)*5) & 255;
-    fb_to_model();
-    bg_pct = 25;
-    $display("-- port 1 load 25%%");
-    program_and_check(0);
-    bg_pct = 50; expect_overrun = 1;
-    $display("-- port 1 load 50%%: bandwidth limited (not counted)");
-    bus_write(11'h110, 0); repeat (200) @(posedge clk_bus); bus_write(11'h110, 1);
-    program_and_check(0);
-    expect_overrun = 0;
-    bus_write(11'h110, 0); repeat (200) @(posedge clk_bus);   // clears the sticky overrun flag
-
-    // test 2: 16 bit RGB565 512x384 2x2 on the whole screen, stride 1024
-    c_bpp = 16; c_fmt = 1; c_hrep = 2; c_vrep = 2; c_stride_b = 1024; c_bursts = 64;
-    for (sy = 0; sy < 384; sy = sy + 1) for (sx = 0; sx < 512; sx = sx + 1) begin
-      fb[sy*1024 + sx*2]     = (sx*7 + sy) & 255;
-      fb[sy*1024 + sx*2 + 1] = (sx + sy*11) & 255;
-    end
-    fb_to_model();
-    program_and_check(0);
-
-    // test 3: 8 bit 800x600 1x1 centered (112..912 x 80..688), stride 800
-    c_bpp = 8; c_hrep = 1; c_vrep = 1; c_hs = 7; c_he = 57; c_vs = 5; c_ve = 43;
-    c_stride_b = 800; c_bursts = 50; c_base = FB_BASE + 32'h1000;
-    for (sy = 0; sy < 608; sy = sy + 1) for (sx = 0; sx < 800; sx = sx + 1) fb['h1000 + sy*800 + sx] = (sx*5 + sy*3 + (sx>>3)) & 255;
-    fb_to_model();
-    program_and_check(0);
-
-    // test 4: 16 bit RGB555 1024 wide 1x1 (512 lines, 1 MB test framebuffer): needs 87% of the slots
-    c_bpp = 16; c_fmt = 2; c_hs = 0; c_he = 64; c_vs = 0; c_ve = 32;
-    c_stride_b = 2048; c_bursts = 128; c_base = FB_BASE;
-    for (sy = 0; sy < 512; sy = sy + 1) for (sx = 0; sx < 1024; sx = sx + 1) begin
-      fb[sy*2048 + sx*2]     = (sx*3 + sy) & 255;
-      fb[sy*2048 + sx*2 + 1] = (sx + sy*5) & 255;
-    end
-    fb_to_model();
-    bg = 0;
-    $display("-- no background traffic");
-    program_and_check(0);
-    bg = 1; expect_overrun = 1;
-    $display("-- with heavy background traffic this mode is bandwidth limited (not counted)");
-    bus_write(11'h110, 0); repeat (200) @(posedge clk_bus); bus_write(11'h110, 1);
-    program_and_check(0);
-    expect_overrun = 0;
-`else
     // test 1: 8 bit 400x300, 2x2 on the whole 800x600
     c_bpp = 8; c_hrep = 2; c_vrep = 2; c_hs = 0; c_he = 50; c_vs = 0; c_ve = 37;
     c_stride_b = 512; c_bursts = 25; c_fmt = 1; c_base = FB_BASE;
@@ -296,7 +231,6 @@ always #(`TPIX) if (pix_run) clk_pix = ~clk_pix;   // pixel clock of the raster
     $display("-- with heavy background traffic (50%% of the slots taken by port 1)");
     bus_write(11'h110, 0); repeat (200) @(posedge clk_bus); bus_write(11'h110, 1);
     program_and_check(0);
-`endif
 
     // switch off like an amiga reset while the pixel clock stands still (pll switch):
     // the status must not report an active scanout, otherwise the driver's

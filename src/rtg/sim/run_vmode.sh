@@ -1,6 +1,6 @@
 #!/bin/bash
 # Sync generator check of the vidmode 2'b10 raster:
-#   bash run_vmode.sh [VMODE_1024_RB|VMODE_1024_VESA]   (no argument: 800x600)
+#   bash run_vmode.sh
 cd "$(dirname "$0")"
 VERILATOR=${VERILATOR:-verilator}
 D=${1:+-D$1}

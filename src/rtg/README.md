@@ -20,23 +20,7 @@ Other variants: `vmodes` (video mode logic only, native video), `test800x600`
 (test pattern), `rtgled` and `rtgdbg` (bring-up variants, see the
 header of `scripts/build_020_video.tcl`).
 
-1024x768 instead of 800x600 (build-time choice, define `VMODE_1024_RB` or
-`VMODE_1024_VESA`, test patterns `test1024rb` and `test1024`):
-
-| variant | timing | pixel clock | PLL |
-|---|---|---|---|
-| `VMODE_1024_RB` | 1184x802, CVT reduced blanking (+h/-v), 60.0 Hz | 57.00 MHz | x10, ODIV 2 |
-| `VMODE_1024_VESA` | 1344x806, VESA DMT (-h/-v), 60.0 Hz | 64.98 MHz | x57 / IDIV 5, ODIV 2 |
-
-RTG cores with 1024x768: `rtg1024rb` (recommended) and `rtg1024` (not recommended:
-the core does not boot on the Tang Nano 20K, probably timing at 65 MHz on the full
-device; the test pattern `test1024` works). Each needs its own driver:
-`amiga/minimig_1024rb.card` or `amiga/minimig_1024.card`, copied to
-`LIBS:Picasso96/minimig.card`. Picture modes up to 1024x768 (8 bit), 16 bit full
-width only with little chipset load, 512x384 (2x2) in 16 bit is uncritical.
-
-`sim/run_vmode.sh [VMODE_1024_RB|VMODE_1024_VESA]` checks the sync generator,
-`sim/run_rtg.sh [VMODE_1024_RB|VMODE_1024_VESA]` the RTG chain on that raster.
+`sim/run_vmode.sh` checks the sync generator, `sim/run_rtg.sh` the RTG chain.
 
 ## Registers (CPU window `$B80000`)
 
@@ -64,9 +48,8 @@ the same byte address in the SDRAM. Stride and bytes per row must be multiples o
 
 Bandwidth: one source row has to be fetched within one line time (two or three
 with vertical repeat). In the simulation (`sim/tb_rtg.sv`, random chipset like load
-on port 1) a row of 1024 bytes (1024 pixels 8 bit, 512 pixels 16 bit) per line holds
-at 25 % load and overruns at 50 %; 800x600 16 bit with 3x vertical repeat holds at
-50 %. The overrun bit in the status register shows lost rows.
+on port 1) 800x600 16 bit with 3x vertical repeat holds at 50 % load. The overrun bit
+in the status register shows lost rows.
 
 ## P96 driver
 

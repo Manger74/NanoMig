@@ -1,7 +1,6 @@
 #!/bin/bash
 # Full chain test: cpu register writes -> rtg_video -> sdram rtg port -> sdram model.
 # Takes a few minutes (several complete 800x600 frames are rendered per test).
-# Optional argument: VMODE_1024_RB or VMODE_1024_VESA for the 1024x768 raster.
 set -e
 # Verilator front end: "verilator", or "verilator-cli" when installed with pip
 cd "$(dirname "$0")"

@@ -1,8 +1,6 @@
 #!/bin/bash
 # Build the NanoMig P96 drivers with vasm:
 #   minimig.card          800x600 core (rtg)
-#   minimig_1024rb.card   1024x768 reduced blanking core (VMODE_1024_RB)
-#   minimig_1024.card     1024x768 VESA core (VMODE_1024_VESA)
 # Picasso96 loads LIBS:Picasso96/minimig.card: copy the file of your core under that name.
 #   NDK_INC  directory with the AmigaOS NDK assembler includes (exec/, lvo/, ...), with trailing /
 #   P96_INC  directory with Picasso96Develop (PrivateInclude/boardinfo.i, settings.i, Include/libraries/Picasso96.i)
@@ -18,7 +16,5 @@ build() {   # output, extra options
     -I "$NDK_INC" -I "$P96_INC/PrivateInclude/" -I "$P96_INC/Include/"
 }
 build minimig.card
-build minimig_1024rb.card -DNANOMIG_1024_RB
-build minimig_1024.card -DNANOMIG_1024_VESA
 rm -f .minimig.card.tmp.asm
 ls -l minimig*.card
