@@ -306,7 +306,7 @@ end
 // ---- line buffer: 2 x 512 words of 32 bit ----
 reg [31:0] lb[0:1023] /* synthesis syn_ramstyle="block_ram" */;
 
-wire [8:0] rword = p_clut ? { 1'b0, rx[9:2] } : { 1'b0, rx[9:1] };
+wire [8:0] rword = p_clut ? { 1'b0, rx[9:2] } : rx[9:1];
 wire [9:0] raddr = { rdbuf, rword };
 
 reg [31:0] lb_q;
