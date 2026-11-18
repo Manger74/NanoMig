@@ -178,6 +178,7 @@ reg         p_en, p_clut, p_565;
 reg  [1:0]  p_hrep, p_vrep;                 // repeat - 1
 reg [10:0]  p_hs, p_he;                     // viewport in pixels
 reg  [9:0]  p_vs, p_ve;                     // viewport in lines
+reg  [9:0]  p_vs2;                          // p_vs - 2 modulo V_TOTAL: yn == p_vs2 two lines before the viewport
 reg [11:0]  p_stride;
 reg  [7:0]  p_bursts;
 reg [18:0]  p_base;
@@ -197,8 +198,6 @@ end
 // event at the last position of every line: prepare the next line
 wire        line_end = (x0 == H_TOTAL - 1);
 wire  [9:0] yn       = (y0 == V_TOTAL - 1) ? 10'd0 : y0 + 10'd1;
-wire  [9:0] yn1      = (yn == V_TOTAL - 1) ? 10'd0 : yn + 10'd1;
-wire  [9:0] yn2      = (yn1 == V_TOTAL - 1) ? 10'd0 : yn1 + 10'd1;
 
 reg         vin;           // current line is inside the viewport
 reg  [9:0]  ry;            // source row of the current line
@@ -229,14 +228,13 @@ wire        more_rows   = (yn_next_row < { 1'b0, p_ve });
 
 // fetch requests
 reg         f_toggle;
-reg  [18:0] f_addr;
 reg         f_buf;
-reg  [18:0] r_addr;        // address of the most recently requested row
+reg  [18:0] r_addr;        // address of the most recently requested row (also the fetch address, quasi static while a fetch runs)
 reg   [7:0] f_bursts;
 
 // row 0 is requested two lines ahead: the request for row 1 follows at the start of
 // row 0, so row 0 gets two line times like every row with vertical repeat
-wire        fetch_row0  = p_en && (yn2 == p_vs) && (p_vs < V_ACTIVE);
+wire        fetch_row0  = p_en && (yn == p_vs2) && (p_vs < V_ACTIVE);
 wire        fetch_next  = p_en && vin_n && (vsub_n == 2'd0) && more_rows;
 
 // the enable bit in the pixel domain: when the rtg is switched off (by the driver or by
@@ -261,6 +259,7 @@ always @(posedge clk_pix) begin
       p_hs     <= { reg_hstart, 4'd0 };
       p_he     <= { reg_hstop,  4'd0 };
       p_vs     <= { reg_vstart, 4'd0 };
+      p_vs2    <= (reg_vstart[5:0] == 6'd0) ? V_TOTAL - 2 : { reg_vstart[5:0], 4'd0 } - 10'd2;
       p_ve     <= { reg_vstop,  4'd0 };
       p_stride <= reg_stride;
       p_bursts <= reg_bursts;
@@ -274,13 +273,11 @@ always @(posedge clk_pix) begin
 
     if (fetch_row0) begin
       r_addr   <= p_base[18:0];
-      f_addr   <= p_base[18:0];
       f_buf    <= 1'b0;                    // row 0
       f_bursts <= p_bursts;
       f_toggle <= ~f_toggle;
     end else if (fetch_next) begin
       r_addr   <= r_addr + { 7'd0, p_stride };
-      f_addr   <= r_addr + { 7'd0, p_stride };
       f_buf    <= ~ry_n[0];                // next row uses the other buffer
       f_bursts <= p_bursts;
       f_toggle <= ~f_toggle;
@@ -364,23 +361,18 @@ reg          f_busy;
 reg  [7:0]   m_left;         // bursts still to be requested
 reg          m_buf;
 reg  [8:0]   m_waddr;        // line buffer word address of the next word
-reg          lb_we;
-reg  [31:0]  lb_wdata;
-reg  [9:0]   lb_waddr;
 reg          overrun;
 
 reg  [1:0]   en_sync_m;
 always @(posedge clk_mem) en_sync_m <= { en_sync_m[0], reg_en };
 
 always @(posedge clk_mem) begin
-  lb_we <= 1'b0;
-
   if (!en_sync_m[1]) overrun <= 1'b0;
 
   // ---- request side ----
   if (!f_busy) begin
     if (req_ev && f_bursts != 0) begin
-      mem_addr <= f_addr;
+      mem_addr <= r_addr;
       mem_req  <= 1'b1;
       m_buf    <= f_buf;
       m_left   <= f_bursts;
@@ -401,16 +393,12 @@ always @(posedge clk_mem) begin
   end
 
   // ---- line buffer write side ----
-  if (mem_dv) begin
-    lb_we    <= 1'b1;
-    lb_waddr <= { m_buf, m_waddr };
-    lb_wdata <= mem_data;
-    m_waddr  <= m_waddr + 9'd1;
-  end
+  if (mem_dv) m_waddr <= m_waddr + 9'd1;
 end
 
+// mem_data is already registered in the sdram controller: write it straight into the line buffer
 always @(posedge clk_mem)
-  if (lb_we) lb[lb_waddr] <= lb_wdata;
+  if (mem_dv) lb[{ m_buf, m_waddr }] <= mem_data;
 
 // overrun flag towards the bus domain
 always @(posedge clk_bus) ovr_sync <= { ovr_sync[0], overrun };
@@ -421,8 +409,8 @@ initial begin
   p_en = 1'b0; en_sync_p = 2'd0; vin = 1'b0; ry = 10'd0; vsub = 2'd0; rdbuf = 1'b0;
   hsub = 2'd0; rx = 10'd0; vblank_pix = 1'b0; active_pix = 1'b0;
   vblank_sync = 2'd0; active_sync = 2'd0; r_addr = 19'd0; f_bursts = 8'd0;
-  lb_we = 1'b0; rgb = 24'd0;
-  p_hrep = 2'd0; p_vrep = 2'd0; p_hs = 11'd0; p_he = 11'd0; p_vs = 10'd0; p_ve = 10'd0;
+  rgb = 24'd0;
+  p_hrep = 2'd0; p_vrep = 2'd0; p_hs = 11'd0; p_he = 11'd0; p_vs = 10'd0; p_vs2 = V_TOTAL - 2; p_ve = 10'd0;
   p_stride = 12'd0; p_bursts = 8'd0; p_base = 19'd0; p_clut = 1'b0; p_565 = 1'b1;
   wr_d = 1'b0;
 end

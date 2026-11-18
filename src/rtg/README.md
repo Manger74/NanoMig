@@ -16,8 +16,8 @@ Build (from `src/`, Gowin IDE installed in `$HOME/gowin`):
     export QT_QPA_PLATFORM=minimal
     gw_sh scripts/build_020_video.tcl rtg
 
-Other variants: `vmodes` (video mode logic only, native video), `test800x600`,
-`test720p` (test patterns), `rtgled` and `rtgdbg` (bring-up variants, see the
+Other variants: `vmodes` (video mode logic only, native video), `test800x600`
+(test pattern), `rtgled` and `rtgdbg` (bring-up variants, see the
 header of `scripts/build_020_video.tcl`).
 
 1024x768 instead of 800x600 (build-time choice, define `VMODE_1024_RB` or

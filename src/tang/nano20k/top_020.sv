@@ -123,15 +123,13 @@ wire pll_lock;
 wire video_locked;
 
 // HDMI video mode: 2'b01 = native Amiga video (28.5MHz pixel clock),
-// 2'b10 = 800x600@60, 2'b11 = 1280x720@60 (see amigaclks.v and hdmi.sv).
+// 2'b10 = 800x600@60 (see amigaclks.v and hdmi.sv).
 // Until RTG takes over, the extended modes are only selectable for test builds
-// (define RTG_TEST_720P or RTG_TEST_800X600 together with HDMI_VIDEO_MODES).
+// (define RTG_TEST_800X600 together with HDMI_VIDEO_MODES).
 `ifdef ENABLE_RTG
 wire       rtg_enable;     // rtg display requested by the cpu (register $B80110)
 `endif
-`ifdef RTG_TEST_720P
-wire [1:0] video_mode = 2'b11;
-`elsif RTG_TEST_800X600
+`ifdef RTG_TEST_800X600
 wire [1:0] video_mode = 2'b10;
 `elsif ENABLE_RTG
 // the rtg driver switches to 800x600 by enabling the rtg display
@@ -1144,7 +1142,7 @@ end
 `endif
 
 `ifdef HDMI_VIDEO_MODES
-// pixel clock depends on the video mode: 28.5, 39.9 or 74.1MHz
+// pixel clock depends on the video mode: 28.5MHz (native) or the extended mode (39.9, 57 or 65MHz)
 localparam integer AUDIO_ACC_WIDTH = 27;
 localparam [AUDIO_ACC_WIDTH-1:0] AUDIO_INC_NATIVE = ((AUDIO_ACC_WIDTH*2)'(AUDIO_RATE) <<< AUDIO_ACC_WIDTH) / 28500000;
 `ifdef VMODE_1024_VESA
@@ -1155,9 +1153,7 @@ localparam integer PIXEL_MODE2 = 57000000;   // 1024x768 reduced blanking
 localparam integer PIXEL_MODE2 = 39900000;   // 800x600
 `endif
 localparam [AUDIO_ACC_WIDTH-1:0] AUDIO_INC_800    = ((AUDIO_ACC_WIDTH*2)'(AUDIO_RATE) <<< AUDIO_ACC_WIDTH) / PIXEL_MODE2;
-localparam [AUDIO_ACC_WIDTH-1:0] AUDIO_INC_720P   = ((AUDIO_ACC_WIDTH*2)'(AUDIO_RATE) <<< AUDIO_ACC_WIDTH) / 74100000;
-wire [AUDIO_ACC_WIDTH-1:0] AUDIO_INC = (video_mode_pix == 2'b11) ? AUDIO_INC_720P :
-                                       (video_mode_pix == 2'b10) ? AUDIO_INC_800 : AUDIO_INC_NATIVE;
+wire [AUDIO_ACC_WIDTH-1:0] AUDIO_INC = video_mode_pix[1] ? AUDIO_INC_800 : AUDIO_INC_NATIVE;
 `else
 localparam integer AUDIO_ACC_WIDTH = $clog2(`PIXEL_CLOCK + AUDIO_RATE);
 
