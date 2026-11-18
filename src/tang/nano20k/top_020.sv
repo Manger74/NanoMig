@@ -26,6 +26,7 @@
 // `define ENABLE_AT_MODEM // serial port <-> virtual AT modem of the FPGA Companion (replaces the midi_in pin)
 // `define ENABLE_PLIP // virtual parallel port: network via plipbox.device and the FPGA Companion, see doc/PLIP.md
 // `define PLIP_LITE   // PLIP without statistics and loopback test, saves logic (needed for the 020 build)
+// `define ENABLE_DRIVE_SOUNDS
 // `define HQ_DRIVE_SOUNDS // drive sounds: with = tone bursts (drive_sounds_hq), without = single click (drive_sounds_min, fewer LEs)
 `define HDMI_OSD      // OSD mixed in by the hdmi module (native and rtg video modes) instead of osd_u8g2
 `define ENABLE_A314 // A314 clockport interface at $D80001: network via a314eth.device and the FPGA Companion, see doc/A314.md (4 BSRAM)
@@ -1441,6 +1442,7 @@ ELVDS_OBUF tmds_bufds [3:0] (
 );
 
 // ========================= Drive Sounds =========================
+`ifdef ENABLE_DRIVE_SOUNDS
 `ifdef HQ_DRIVE_SOUNDS
 drive_sounds_hq drive_sounds_inst (
     .clk     (clk_pixel),
@@ -1461,6 +1463,7 @@ drive_sounds_min drive_sounds_inst (
     .buzzer  (buzzer)
 );
 `endif // HQ_DRIVE_SOUNDS
+`endif // ENABLE_DRIVE_SOUNDS
    
 endmodule
 
