@@ -12,6 +12,7 @@
 // =========================================================================
 
 `define ENABLE_TG68K
+`define DISABLE_TG68K_010
 `define ENABLE_AGA   // offer the AGA chipset in the menu
 `define CPU_SLOW14   // run TG68K at 14MHz effective (A1200 speed) for timing closure
 `define ENABLE_CACHE // MiSTer cpu cache between the cpu and the sdram (cached kickstart + fast ram)
