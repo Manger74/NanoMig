@@ -46,7 +46,7 @@ module hdmi
 
 `ifdef HDMI_VIDEO_MODES
     // 2'b01 (or 2'b00): Amiga video timing as before
-    // 2'b10: 800x600@60, 2'b11: 1280x720@60 (free running, ignores reset sync)
+    // 2'b10: 800x600@60 (or 1024x768, see VMODE_1024_*), free running, ignores reset sync
     input logic [1:0]                 video_mode,
 `endif
     input logic                       pal_mode,    // 1 for pal timing
@@ -117,11 +117,9 @@ localparam [1:0] INVERT_MODE2 = 2'b10;
 wire [102:0] timing_800x600  = { 11'd0, 11'd1056, 11'd800,  11'd40, 11'd128, 10'd628, 10'd600, 10'd1, 10'd4, 8'd0 }; // VESA, no CEA VIC
 localparam [1:0] INVERT_MODE2 = 2'b00;
 `endif
-wire [102:0] timing_1280x720 = { 11'd0, 11'd1650, 11'd1280, 11'd110, 11'd40, 10'd750, 10'd720, 10'd5, 10'd5, 8'd4 }; // CEA VIC 4
 
 wire         ext_mode = video_mode[1];
-wire [102:0] timing = (video_mode == 2'b11) ? timing_1280x720 :
-                      (video_mode == 2'b10) ? timing_800x600  : timing_amiga;
+wire [102:0] timing = ext_mode ? timing_800x600 : timing_amiga;
 `else
 wire         ext_mode = 1'b0;
 wire [102:0] timing = timing_amiga;
@@ -145,10 +143,10 @@ wire [9:0] vsync_pulse_size   = timing[17: 8];
 
 wire [7:0] cea                = timing[7:0]; 
    
-// Amiga timing and PAL/NTSC CEA modes use negative sync, 800x600 and 720p positive sync,
+// Amiga timing and PAL/NTSC CEA modes use negative sync, 800x600 positive sync,
 // 1024x768 as given above (invert[0] hsync, invert[1] vsync)
 `ifdef HDMI_VIDEO_MODES
-assign invert = (video_mode == 2'b10) ? INVERT_MODE2 : ext_mode ? 2'b00 : 2'b11;
+assign invert = ext_mode ? INVERT_MODE2 : 2'b11;
 `else
 assign invert = 2'b11;
 `endif
@@ -173,9 +171,14 @@ always_comb begin
 end
 
 // Only used for the width of the CTS counter in the audio clock regeneration
-// packet (CTS = pixel clock * N / (128 * fs), 74100 for 720p at 48kHz needs 17 bits)
+// packet (CTS = pixel clock * N / (128 * fs) plus 10%: 65 MHz (1024x768 VESA) needs
+// 17 bits, up to 57 MHz 16 bits)
 `ifdef HDMI_VIDEO_MODES
-localparam real VIDEO_RATE = 74.25E6;
+`ifdef VMODE_1024_VESA
+localparam real VIDEO_RATE = 65E6;
+`else
+localparam real VIDEO_RATE = 57E6;
+`endif
 `else
 localparam real VIDEO_RATE = 32E6;
 `endif
@@ -211,7 +214,7 @@ logic [5:0] control_data = 6'd0;
 logic [11:0] data_island_data = 12'd0;
 
 `ifdef HDMI_EXT_TEST_PATTERN
-// test pattern for the 800x600/720p modes: white frame around the active area,
+// test pattern for the 800x600 / 1024x768 modes: white frame around the active area,
 // grey 64x64 grid (squares must look square) and red/green gradients
 wire ext_border = cx == 11'd0 || cx == screen_width - 1'b1 || cy == 10'd0 || cy == screen_height - 1'b1;
 wire ext_grid   = cx[5:0] == 6'd0 || cy[5:0] == 6'd0;

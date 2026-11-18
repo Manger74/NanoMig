@@ -9,7 +9,6 @@ module amigaclks (
 	// video clocks
 	// 2'b01: 28.5MHz pixel clock (native Amiga video, default)
 	// 2'b10: 39.9MHz pixel clock (800x600@60)
-	// 2'b11: 74.1MHz pixel clock (1280x720@60)
 	// 2'b00: 57MHz pixel clock (former RTG setting)
 	input [1:0] vidmode,
 	output clk_tmds,
@@ -77,7 +76,6 @@ defparam sysclk_inst.DEVICE = "GW2AR-18C";
 //     10       7    4    798.0   199.5     39.90   800x600
 //     10      10    2    570.0   285.0     57.00   1024x768 reduced blanking (VMODE_1024_RB)
 //     10    57/5    2    649.8   324.9     64.98   1024x768 VESA (VMODE_1024_VESA, IDIV 5)
-//     11      13    2    741.0   370.5     74.10
 reg [5:0] fbdsel;
 reg [5:0] odsel;
 
@@ -99,7 +97,6 @@ always @(*) begin
 `else
         2'b10:   begin fbdsel = 6'b111001; odsel = 6'b111110; end   // x7
 `endif
-        2'b11:   begin fbdsel = 6'b110011; odsel = 6'b111111; end
         default: begin fbdsel = 6'b111011; odsel = 6'b111110; end   // 2'b01 native
     endcase
 end
