@@ -377,6 +377,7 @@ static BOOL np_unit_start(struct NPUnit *u) {
     return FALSE;
   stack = (UBYTE *)(t + 1);
   t->tc_Node.ln_Type = NT_TASK;
+  np_newlist((struct MinList *)&t->tc_MemEntry);       /* RemTask() walks it when the task ends */
   t->tc_Node.ln_Pri = 5;
   t->tc_Node.ln_Name = (char *)np_taskname;
   t->tc_SPLower = stack;

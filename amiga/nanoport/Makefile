@@ -12,12 +12,15 @@ NETINC  ?= $(VBCC)/netinclude
 nanoport.device: nanoport_asm.s nanoport.c nanoport.h
 	$(VC) +$(VCCFG) -cpu=68000 -O2 -nostdlib -o $@ nanoport_asm.s nanoport.c -lvc -lamiga
 
+nptest: nptest.c nanoport.h
+	$(VC) +$(VCCFG) -cpu=68020 -O2 -o $@ nptest.c -lamiga
+
 test: test/test_nanoport.c nanoport.c nanoport.h
 	m68k-linux-gnu-gcc -m68000 -O1 -std=gnu99 -static '-D__reg(x)=' -Wno-pointer-sign \
 	  -Itest/shim -I. -I$(NETINC) -I$(NDK) test/test_nanoport.c -o test/test_nanoport
 	qemu-m68k test/test_nanoport
 
 clean:
-	rm -f nanoport.device test/test_nanoport
+	rm -f nanoport.device nptest test/test_nanoport
 
 .PHONY: test clean
