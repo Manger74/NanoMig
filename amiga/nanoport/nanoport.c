@@ -553,8 +553,10 @@ static void np_dev_open(__reg("a1") struct IOSana2Req *ios, __reg("d0") ULONG un
     switch(ti->ti_Tag) {
     case S2_CopyToBuff:        op->copy_to   = (np_copy_fn)ti->ti_Data; break;
     case S2_CopyFromBuff:      op->copy_from = (np_copy_fn)ti->ti_Data; break;
+#ifndef NP_NO_DMA   /* diagnostic build without the DMA hooks: -DNP_NO_DMA */
     case S2_DMACopyToBuff32:   op->dma_to    = (np_dma_fn)ti->ti_Data;  break;
     case S2_DMACopyFromBuff32: op->dma_from  = (np_dma_fn)ti->ti_Data;  break;
+#endif
     }
   }
   if(!op->copy_to || !op->copy_from) {
