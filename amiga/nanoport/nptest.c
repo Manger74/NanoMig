@@ -118,11 +118,23 @@ static void eth_hdr(const UBYTE *dst, UWORD type) {
   memcpy(frame, dst, 6); memcpy(frame + 6, mymac, 6); put16(frame + 12, type);
 }
 
+/* answer an ARP request for our IP, else the router drops us from its cache */
+static BOOL arp_answer(const UBYTE *rx, int len) {
+  if(len < 42 || rx[12] != 8 || rx[13] != 6 || rx[21] != 1 ||
+     ((rx[38]<<24)|(rx[39]<<16)|(rx[40]<<8)|rx[41]) != myip) return FALSE;
+  eth_hdr(rx + 6, 0x0806);
+  put16(frame+14, 1); put16(frame+16, 0x0800); frame[18] = 6; frame[19] = 4; put16(frame+20, 2);
+  memcpy(frame+22, mymac, 6); put32(frame+28, myip);
+  memcpy(frame+32, rx+22, 10);          /* requester MAC + IP */
+  send_frame(42);
+  return TRUE;
+}
+
 static int ping_flood(void) {
   static UWORD rxw[800];
   UBYTE *rx = (UBYTE *)rxw;
   static const UBYTE bcast[6] = { 255,255,255,255,255,255 };
-  ULONG sent = 0, ok = 0, lost = 0, bad = 0, other = 0, t;
+  ULONG sent = 0, ok = 0, lost = 0, bad = 0, other = 0, arp = 0, t;
   UWORD seq = 0;
   int len, i;
 
@@ -172,12 +184,12 @@ static int ping_flood(void) {
 	if(good) ok++; else bad++;
 	break;
       }
-      other++;
+      if(arp_answer(rx, len)) arp++; else other++;
     }
     if(t == 400000) lost++;
     seq++;
     if(!(sent & 255))
-      Printf("sent %lu, ok %lu, lost %lu, corrupt %lu, other frames %lu\n", sent, ok, lost, bad, other);
+      Printf("sent %lu, ok %lu, lost %lu, corrupt %lu, arp %lu, other %lu\n", sent, ok, lost, bad, arp, other);
   }
   REG(R_CTRL) = CTRL_RESET;
   Printf("nptest: sent %lu, ok %lu, lost %lu, corrupt %lu\n", sent, ok, lost, bad);
