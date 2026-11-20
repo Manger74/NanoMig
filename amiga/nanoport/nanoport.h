@@ -49,11 +49,12 @@
 #define NP_MINFRAME  60
 #define NP_HDR       14
 #define NP_MCAST_MAX 16
+#define NP_STACK     8192
 
-/* SANA-II R4 DMA hooks, not in older headers */
+/* SANA-II R4 DMA hooks, not in older headers (+4..+7 are the 16/32 bit copy hooks) */
 #ifndef S2_DMACopyToBuff32
-#define S2_DMACopyToBuff32   (S2_Dummy + 4)
-#define S2_DMACopyFromBuff32 (S2_Dummy + 5)
+#define S2_DMACopyToBuff32   (S2_Dummy + 8)
+#define S2_DMACopyFromBuff32 (S2_Dummy + 9)
 #endif
 
 typedef BOOL (*np_copy_fn)(__reg("a0") APTR to, __reg("a1") APTR from, __reg("d0") ULONG n);
@@ -89,7 +90,6 @@ struct NPUnit {
   struct MinList writeq;       /* writes waiting for a free TX slot */
   struct MinList eventq;       /* S2_ONEVENT */
   UWORD rx_slots, tx_slots;
-  UWORD rx_slot, tx_slot;      /* next slot to read / write */
   BOOL online, configured, promisc;
   UBYTE curaddr[6];
   UBYTE defaddr[6];

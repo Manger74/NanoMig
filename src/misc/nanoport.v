@@ -186,6 +186,10 @@ wire [7:0] st1 = { rx_tail4, rx_free4 };
 wire [7:0] st2 = { tx_head4, tx_used4 };
 
 // ------------------------------------------------------------------ control
+reg reset_d = 1'b0;
+initial mcu_int = 1'b0;
+always @(posedge clk) reset_d <= reset;
+
 always @(posedge clk) begin
   if(reset) begin
     rx_head <= 0;
@@ -194,11 +198,14 @@ always @(posedge clk) begin
     tx_tail <= 0;
     ctrl    <= 8'h00;
     intena  <= 2'b00;
-    mcu_int <= 1'b1;    // tell the Companion that the Amiga went offline
+    // the interrupt is a level: holding it during reset would keep the
+    // Companion busy and it could never release a reset it started itself
+    if(mcu_iack) mcu_int <= 1'b0;
     put_ok  <= 1'b0;
     sub     <= 8'hff;
   end else begin
     if(mcu_iack) mcu_int <= 1'b0;
+    if(reset_d)  mcu_int <= 1'b1;   // once after reset: the Amiga went offline
 
     // cpu register writes
     if(cpu_wr && sel_reg) begin

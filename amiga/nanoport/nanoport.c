@@ -194,12 +194,13 @@ static void np_rx_frame(struct NPUnit *u, UBYTE *frame, ULONG len) {
   np_deliver(u, hit, frame, len, flags);
 }
 
+/* the slot numbers always come from the card (PTRS), so the driver can't
+   get out of step with it, e.g. after a ring reset */
 static void np_service_rx(struct NPUnit *u) {
   while(ST_RXCNT(np_rd(u, R_STATUS))) {
-    UBYTE *slot = (UBYTE *)u->hw + NP_RX_BASE + ((ULONG)u->rx_slot << 11);
+    UBYTE *slot = (UBYTE *)u->hw + NP_RX_BASE + ((ULONG)(np_rd(u, R_PTRS) & 15) << 11);
     np_rx_frame(u, slot + 2, *(UWORD *)slot);
     np_wr(u, R_RXACK, 0);
-    u->rx_slot = (u->rx_slot + 1) & (u->rx_slots - 1);
   }
   if(u->online) np_intena(u, INT_RX, 0);
 }
@@ -209,7 +210,7 @@ static void np_service_rx(struct NPUnit *u) {
 /* copy one write request into the next TX slot, txlock is held */
 static void np_tx_frame(struct NPUnit *u, struct IOSana2Req *ios) {
   struct NPOpener *op = ios->ios2_BufferManagement;
-  UBYTE *slot = (UBYTE *)u->hw + NP_TX_BASE + ((ULONG)u->tx_slot << 11);
+  UBYTE *slot = (UBYTE *)u->hw + NP_TX_BASE + ((ULONG)((np_rd(u, R_PTRS) >> 4) & 15) << 11);
   UBYTE *dst = slot + 2;
   ULONG n = ios->ios2_DataLength, len = n;
   APTR src;
@@ -235,7 +236,6 @@ static void np_tx_frame(struct NPUnit *u, struct IOSana2Req *ios) {
 
   *(UWORD *)slot = len < NP_MINFRAME ? NP_MINFRAME : len;
   np_wr(u, R_TXGO, 0);
-  u->tx_slot = (u->tx_slot + 1) & (u->tx_slots - 1);
   u->stats.PacketsSent++;
 }
 
@@ -288,7 +288,6 @@ static void np_set_online(struct NPUnit *u, BOOL on) {
   u->online = on;
   if(on) {
     np_wr(u, R_CTRL, CTRL_RESET | CTRL_ONLINE | (u->promisc ? CTRL_PROMISC : 0));
-    u->rx_slot = u->tx_slot = 0;
     u->stats.Reconfigurations++;
     np_intena(u, INT_RX, 0);
     np_event(u, S2EVENT_ONLINE);
@@ -366,15 +365,15 @@ static BOOL np_unit_start(struct NPUnit *u) {
   np_wr(u, R_CTRL, CTRL_RESET);
 
   /* unit task */
-  if(!(t = AllocMem(sizeof(struct Task) + 4096, MEMF_PUBLIC | MEMF_CLEAR)))
+  if(!(t = AllocMem(sizeof(struct Task) + NP_STACK, MEMF_PUBLIC | MEMF_CLEAR)))
     return FALSE;
   stack = (UBYTE *)(t + 1);
   t->tc_Node.ln_Type = NT_TASK;
   t->tc_Node.ln_Pri = 5;
   t->tc_Node.ln_Name = (char *)np_taskname;
   t->tc_SPLower = stack;
-  t->tc_SPUpper = stack + 4096;
-  t->tc_SPReg = stack + 4096;
+  t->tc_SPUpper = stack + NP_STACK;
+  t->tc_SPReg = stack + NP_STACK;
   u->task = t;
   u->caller = FindTask(NULL);
   SetSignal(0, SIGF_SINGLE);
@@ -399,7 +398,7 @@ static void np_unit_stop(struct NPUnit *u) {
   SetSignal(0, SIGF_SINGLE);
   Signal(u->task, u->quitmask);
   Wait(SIGF_SINGLE);
-  FreeMem(u->task, sizeof(struct Task) + 4096);
+  FreeMem(u->task, sizeof(struct Task) + NP_STACK);
   u->task = NULL;
 }
 

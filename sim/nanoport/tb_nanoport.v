@@ -116,6 +116,16 @@ initial begin
  iack=1; @(posedge clk); iack=0; @(posedge clk);
  cpu_wr(16'hC006,0,0,0); check(mint==1, "irq on rx not full");
  cpu_wr(16'hC00C,16'h0080,0,0); cpu_rd(16'hC002); check(rdv[3:0]==0 && rdv[7:4]==2, "ring reset");
+ // reset: the mcu interrupt must be clearable while reset is held
+ // and must come once after the release
+ @(negedge clk) iack=1; @(negedge clk) iack=0; @(posedge clk);
+ @(negedge clk) reset=1; repeat(4) @(posedge clk);
+ @(negedge clk) iack=1; @(negedge clk) iack=0; repeat(20) @(posedge clk);
+ check(mint==0, "no mcu irq held during reset");
+ @(negedge clk) reset=0; repeat(3) @(posedge clk);
+ check(mint==1, "mcu irq after reset");
+ @(negedge clk) iack=1; @(negedge clk) iack=0; repeat(3) @(posedge clk);
+ check(mint==0, "mcu irq cleared after reset");
  $display("DONE errors=%0d", errors); $finish;
 end
 endmodule
