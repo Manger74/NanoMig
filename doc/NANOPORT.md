@@ -121,7 +121,9 @@ bridged.
   task. The task processes all pending frames before it unmasks the
   interrupt, so a burst of frames causes a single interrupt.
 
-Build with vbcc: `build.bat` (Windows) or `make` in `amiga/nanoport`.
+Build with vbcc: `build.bat` (Windows, kusma/amiga-dev) or `make` in
+`amiga/nanoport` (Linux, vbcc of the AmigaPorts m68k-amigaos-gcc package
+with its `bin/` in the PATH).
 `make test` runs a host test of the driver logic (m68k-linux-gnu-gcc
 and qemu-m68k, exec and the card are mocked).
 
