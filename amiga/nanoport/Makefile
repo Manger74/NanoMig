@@ -19,3 +19,5 @@ test: test/test_nanoport.c nanoport.c nanoport.h
 
 clean:
 	rm -f nanoport.device test/test_nanoport
+
+.PHONY: test clean

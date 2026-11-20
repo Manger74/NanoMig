@@ -251,9 +251,14 @@ static void np_service_tx(struct NPUnit *u) {
     np_tx_frame(u, ios);
     ReplyMsg(&ios->ios2_Req.io_Message);
   }
-  if(IsListEmpty((struct List *)&u->writeq)) np_intena(u, 0, INT_TX);
-  else np_intena(u, INT_TX, 0);
   ReleaseSemaphore(&u->txlock);
+
+  /* atomic with the queue check: np_write() may queue a frame any time */
+  Disable();
+  if(IsListEmpty((struct List *)&u->writeq)) u->intena &= ~INT_TX;
+  else u->intena |= INT_TX;
+  np_wr(u, R_INTENA, u->intena);
+  Enable();
 }
 
 /* CMD_WRITE, S2_BROADCAST, S2_MULTICAST */
@@ -269,15 +274,20 @@ static BOOL np_write(struct NPUnit *u, struct IOSana2Req *ios) {
     return TRUE;
   }
 
-  ObtainSemaphore(&u->txlock);
-  if(IsListEmpty((struct List *)&u->writeq) && ST_TXFREE(np_rd(u, R_STATUS))) {
-    np_tx_frame(u, ios);
+  /* Never wait for the lock here: the unit task holds it while it calls the
+     stack's copy hooks, and the stack may well be the caller and hold its
+     own locks. If the lock is busy, the frame is queued and sent by the unit
+     task (INT_TX fires as soon as a slot is free). */
+  if(AttemptSemaphore(&u->txlock)) {
+    if(IsListEmpty((struct List *)&u->writeq) && ST_TXFREE(np_rd(u, R_STATUS))) {
+      np_tx_frame(u, ios);
+      ReleaseSemaphore(&u->txlock);
+      return TRUE;
+    }
     ReleaseSemaphore(&u->txlock);
-    return TRUE;
   }
   np_queue(&u->writeq, ios);
   np_intena(u, INT_TX, 0);
-  ReleaseSemaphore(&u->txlock);
   return FALSE;
 }
 
@@ -296,9 +306,7 @@ static void np_set_online(struct NPUnit *u, BOOL on) {
     np_wr(u, R_CTRL, 0);
     np_flush_list(&u->readq, S2ERR_OUTOFSERVICE, S2WERR_UNIT_OFFLINE);
     np_flush_list(&u->orphanq, S2ERR_OUTOFSERVICE, S2WERR_UNIT_OFFLINE);
-    ObtainSemaphore(&u->txlock);
     np_flush_list(&u->writeq, S2ERR_OUTOFSERVICE, S2WERR_UNIT_OFFLINE);
-    ReleaseSemaphore(&u->txlock);
     np_event(u, S2EVENT_OFFLINE);
   }
 }
@@ -512,9 +520,7 @@ static BOOL np_command(struct NPUnit *u, struct IOSana2Req *ios) {
     np_flush_list(&u->readq, IOERR_ABORTED, 0);
     np_flush_list(&u->orphanq, IOERR_ABORTED, 0);
     np_flush_list(&u->eventq, IOERR_ABORTED, 0);
-    ObtainSemaphore(&u->txlock);
     np_flush_list(&u->writeq, IOERR_ABORTED, 0);
-    ReleaseSemaphore(&u->txlock);
     break;
 
   default:

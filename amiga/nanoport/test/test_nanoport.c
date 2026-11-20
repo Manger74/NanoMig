@@ -67,7 +67,7 @@ static struct Library explib; struct Library *OpenLibrary(CONST_STRPTR n, ULONG 
 void CloseLibrary(struct Library *l) {}
 static struct ConfigDev cdev; struct ConfigDev *FindConfigDev(CONST struct ConfigDev *o, LONG m, LONG p) {
   if(m != 2011 || p != 0x4e) return NULL; cdev.cd_BoardAddr = card; return &cdev; }
-void InitSemaphore(struct SignalSemaphore *s) {} void ObtainSemaphore(struct SignalSemaphore *s) {} void ReleaseSemaphore(struct SignalSemaphore *s) {}
+static int lock_busy; ULONG AttemptSemaphore(struct SignalSemaphore *s) { return !lock_busy; } void InitSemaphore(struct SignalSemaphore *s) {} void ObtainSemaphore(struct SignalSemaphore *s) {} void ReleaseSemaphore(struct SignalSemaphore *s) {}
 struct Library *MakeLibrary(CONST APTR v, CONST APTR s, ULONG (*CONST i)(), ULONG sz, ULONG seg) { UBYTE *m = calloc(1, sz+64); struct Library *l=(struct Library*)(m+64); l->lib_NegSize=64; l->lib_PosSize=sz; return l; }
 void AddDevice(struct Device *d) {}
 void np_copy(APTR to, APTR from, ULONG n) { memcpy(to, from, n); }
@@ -176,6 +176,15 @@ int main(int argc, char **argv) {
   np_dev_beginio(w3, base); len = txget(out); CHECK(len == 1514 && !memcmp(out, f, 1514));
   struct IOSana2Req *w4 = newreq(CMD_WRITE, 0x800, &wb); w4->ios2_BufferManagement = o1->ios2_BufferManagement; w4->ios2_DataLength = 1501;
   np_dev_beginio(w4, base); CHECK(w4->ios2_Req.io_Error == S2ERR_MTU_EXCEEDED);
+
+  /* tx lock held by the unit task: the write is queued, never waited for */
+  lock_busy = 1; nreplied = 0;
+  struct IOSana2Req *w5 = newreq(CMD_WRITE, 0x800, &wb); w5->ios2_BufferManagement = o1->ios2_BufferManagement; w5->ios2_DataLength = 70;
+  np_dev_beginio(w5, base);
+  CHECK(!was_replied(w5) && (intena_hw & INT_TX) && !IsListEmpty((struct List *)&u->writeq));
+  lock_busy = 0;
+  np_service_tx(u);
+  CHECK(was_replied(w5) && txget(out) == 84 && !(intena_hw & INT_TX));
 
   /* second opener with DMA hook */
   struct IOSana2Req *o2 = newreq(0,0,NULL); o2->ios2_BufferManagement = tags2;
