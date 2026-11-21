@@ -76,6 +76,7 @@ add_file misc/mcu_spi.v
 add_file misc/sysctrl.v
 add_file misc/hid.v
 add_file misc/osd_u8g2.v
+add_file misc/osd_hdmi.v
 add_file misc/ws2812.v
 add_file misc/video_analyzer.v
 add_file misc/sd_card.v

@@ -92,6 +92,20 @@ module sdram #(
   input  wire        p2_cs,    // cpu requests read/wrie
   input  wire        p2_we,    // cpu requests write
   output wire        p2_ack    // cpu ack
+`ifdef ENABLE_RTG
+  ,
+  // rtg scanout port: reads one 16 byte aligned unit (the 4 beat burst) per request.
+  // rtg_cs must be held until the burst has been delivered (rtg_ack) or it
+  // may be repeated. The four 32 bit beats are delivered on rtg_dout, each one
+  // flagged with a one clock rtg_dv pulse. rtg_ack is high together with the
+  // last beat. The beats are in memory order, i.e. big endian: the byte with
+  // the lowest address is in bits 31:24 of the first beat.
+  input  wire        rtg_cs,    // rtg requests a burst
+  input  wire [18:0] rtg_addr,  // 16 byte unit address (byte address >> 4)
+  output reg  [31:0] rtg_dout,  // burst data
+  output reg         rtg_dv,    // rtg_dout is valid
+  output reg         rtg_ack    // last beat of the burst
+`endif
 );
 
 localparam WIDTH32 = (DATA_WIDTH == 32);
@@ -281,12 +295,19 @@ generate
   end
 endgenerate
 
-localparam PORT_1       = 2'd0;
-localparam PORT_2       = 2'd1;
-localparam PORT_REFRESH = 2'd2;
-localparam PORT_IDLE    = 2'd3;
+localparam PORT_1       = 3'd0;
+localparam PORT_2       = 3'd1;
+localparam PORT_REFRESH = 3'd2;
+localparam PORT_IDLE    = 3'd3;
+localparam PORT_RTG     = 3'd4;
 
-reg [1:0] sdram_port;
+reg [2:0] sdram_port;
+
+`ifdef ENABLE_RTG
+// the burst needs the 4 beat burst mode which is only set up for CHIP48_BURST
+wire rtg_req = rtg_cs && CHIP48_BURST;
+wire [31:0] rtg_addr32 = { 11'd0, rtg_addr, 2'b00 };
+`endif
 
 always @(posedge clk, negedge reset_n) begin
   if (!reset_n)
@@ -332,6 +353,19 @@ always @(posedge clk) begin
 
         addr_0  <= addr[0];
 
+`ifdef ENABLE_RTG
+      end else if (rtg_req) begin
+        sd_addr <= rtg_addr32[RAS_WIDTH+CAS_WIDTH-1:CAS_WIDTH];
+
+        sd_addr_cas[RAS_WIDTH-1:0] <= {RAS_WIDTH{1'b0}};
+        sd_addr_cas[CAS_WIDTH-1:0] <= rtg_addr32[CAS_WIDTH-1:0];
+        sd_addr_cas[10] <= 1'b1;  // precharge
+
+        sd_ba <= rtg_addr32[RAS_WIDTH+CAS_WIDTH+1:RAS_WIDTH+CAS_WIDTH];
+
+        ram_we  <= 1'b0;
+        addr_0  <= 1'b0;
+`endif
       end else if (p2_cs) begin
         sd_addr <= p2_addr32[RAS_WIDTH+CAS_WIDTH-1:CAS_WIDTH];
 
@@ -362,6 +396,11 @@ always @(posedge clk) begin
 
           refreshcnt <= SYNC_CYCLES_PER_REFRESH[REFRESHCNT_MAX_WIDTH-1:0];
 
+`ifdef ENABLE_RTG
+        end else if (rtg_req) begin
+          sdram_port <= PORT_RTG;
+          sd_cmd     <= CMD_ACTIVE;
+`endif
         end else if (p2_cs) begin
           sdram_port <= PORT_2;
           sd_cmd     <= CMD_ACTIVE;
@@ -387,6 +426,11 @@ always @(posedge clk) begin
         PORT_REFRESH: begin
           sd_cmd <= CMD_AUTO_REFRESH;
         end
+`ifdef ENABLE_RTG
+        PORT_RTG: begin
+          sd_cmd <= CMD_READ;
+        end
+`endif
         default: ;
       endcase
     end
@@ -524,6 +568,32 @@ generate
     end
   end
 endgenerate
+
+`ifdef ENABLE_RTG
+// rtg burst: the four 32 bit beats are passed on as they come. Only available
+// with the 32 bit wide ram of the tang nano 20k.
+generate
+  if (WIDTH32) begin
+    always @(posedge clk) begin
+      rtg_dv  <= 1'b0;
+      rtg_ack <= 1'b0;
+
+      if (sdram_port == PORT_RTG) begin
+        case (state)
+          STATE_READ_0, STATE_READ_1, STATE_READ_2, STATE_READ_3: begin
+            rtg_dout <= sd_data;
+            rtg_dv   <= 1'b1;
+            if (state == STATE_READ_3) rtg_ack <= 1'b1;
+          end
+          default: ;
+        endcase
+      end
+    end
+  end else begin
+    initial begin rtg_dout = 32'd0; rtg_dv = 1'b0; rtg_ack = 1'b0; end
+  end
+endgenerate
+`endif
 
 generate
   if (ACK_DELAY == 1) begin
