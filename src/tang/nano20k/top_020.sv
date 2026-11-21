@@ -25,6 +25,7 @@
 // `define ENABLE_AT_MODEM // serial port <-> virtual AT modem of the FPGA Companion (replaces the midi_in pin)
 // `define ENABLE_PLIP // virtual parallel port: network via plipbox.device and the FPGA Companion, see doc/PLIP.md
 // `define PLIP_LITE   // PLIP without statistics and loopback test, saves logic (needed for the 020 build)
+`define ENABLE_NANOPORT // nanoport network card (Zorro II), SANA-II driver nanoport.device, see doc/NANOPORT.md
 // `define HQ_DRIVE_SOUNDS // drive sounds: with = tone bursts (drive_sounds_hq), without = single click (drive_sounds_min, fewer LEs)
 `define HDMI_OSD      // OSD mixed in by the hdmi module (native and rtg video modes) instead of osd_u8g2
 
@@ -284,6 +285,15 @@ wire [7:0] hid_data_out;
 wire [7:0] osd_data_out = 8'h55;  // OSD actually has no data output
 wire [7:0] sdc_data_out;
 
+`ifdef ENABLE_NANOPORT
+wire        mcu_net_strobe;
+wire [7:0]  net_data_out;
+wire        net_sck_rd;
+wire [10:0] net_sck_idx;
+wire [7:0]  net_sck_q;
+wire        net_int;
+`endif
+
 mcu_spi mcu (
 	 .clk(clk_28m),
 	 .reset(rst_28m),
@@ -305,6 +315,13 @@ mcu_spi mcu (
      .mcu_hid_din(hid_data_out),
      .mcu_osd_din(osd_data_out),
      .mcu_sdc_din(sdc_data_out)
+`ifdef ENABLE_NANOPORT
+    ,.mcu_net_strobe(mcu_net_strobe),
+     .mcu_net_din(net_data_out),
+     .net_sck_rd(net_sck_rd),
+     .net_sck_idx(net_sck_idx),
+     .net_sck_q(net_sck_q)
+`endif
 );
 
 // decode SPI/MCU data received for human input devices (HID) and
@@ -575,7 +592,11 @@ sysctrl #(
 	.system_drive_sounds(osd_drive_sounds),
 
         .int_out_n(spi_intn),
+`ifdef ENABLE_NANOPORT
+        .int_in( { 2'b00, net_int, 1'b0, sdc_int, 1'b0, hid_int, 1'b0 }),
+`else
         .int_in( { 4'b0000, sdc_int, 1'b0, hid_int, 1'b0 }),
+`endif
         .int_ack( int_ack ),
 
 `ifdef ENABLE_AT_MODEM
@@ -803,6 +824,19 @@ nanomig #(
  .kbd_mouse_type(kbd_mouse_type),  
  .kbd_mouse_data(kbd_mouse_data),
  .keyboard_ack(keyboard_ack),
+
+`ifdef ENABLE_NANOPORT
+ .np_spi_strobe(mcu_net_strobe),
+ .np_spi_start(mcu_start),
+ .np_spi_din(mcu_data_out),
+ .np_spi_dout(net_data_out),
+ .np_mcu_int(net_int),
+ .np_mcu_iack(int_ack[5]),
+ .np_sck(spi_io_clk),
+ .np_sck_rd(net_sck_rd),
+ .np_sck_idx(net_sck_idx),
+ .np_sck_q(net_sck_q),
+`endif
  .joystick0(joystick0),
  .joystick1(joystick1),
 				 

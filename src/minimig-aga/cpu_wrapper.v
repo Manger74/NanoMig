@@ -95,6 +95,14 @@ module cpu_wrapper
 	output reg [1:0]  cpustate,
 	output reg [3:0]  cacr,
 	output reg [31:0] nmi_addr,
+`ifdef ENABLE_NANOPORT
+	// nanoport network card (misc/nanoport.v) on the fast cpu path. Address,
+	// data and byte selects are taken from ramaddr/ramdin/ramuds/ramlds.
+	output		  np_req,
+	input [15:0]	  np_dout,
+	input		  np_ready,
+`endif
+
 	output		  cpu_clkena  // the tg68k advances on this enable (bus handshake consumption)
 );
 
@@ -231,7 +239,21 @@ reg [1:0] autocfg_card;
 reg [3:0] autocfg_data;
 reg  [15:0] chip_data;
 
-wire [15:0] cpu_din = ramsel ? ramdat :
+`ifdef ENABLE_NANOPORT
+// Zorro II I/O card, 64 KiB at the base assigned by autoconfig
+reg       np_ac;      // card is waiting for autoconfig
+reg       np_ena;
+reg [7:0] np_base;
+reg [3:0] np_base_lo;
+wire      sel_nport = np_ena && (cpu_addr[31:16] == { 8'h00, np_base });
+assign    np_req = cpu_req & sel_nport;
+`else
+wire      sel_nport = 1'b0;
+wire      np_ready = 1'b0;
+wire [15:0] np_dout = 16'h0000;
+`endif
+
+wire [15:0] cpu_din = sel_nport ? np_dout : ramsel ? ramdat :
 `ifdef FASTCHIP_DEPRECATED
 	    fastchip_selack ? fastchip_dout :
 `endif
@@ -380,7 +402,7 @@ always @(posedge clk) begin
 	else if (~cpu_req)
 		cpu_internal_ack <= 1'b1;
 end
-assign cpu_clkena = cpu_internal_ack | chipready | ramready
+assign cpu_clkena = cpu_internal_ack | chipready | ramready | np_ready
 `ifdef FASTCHIP_DEPRECATED
 	| fastchip_ready
 `endif
@@ -393,7 +415,7 @@ reg tg68_armed;
 always @(posedge clk)
 	tg68_armed <= reset;
 
-assign cpu_clkena = (~cpu_req & tg68_armed) | chipready | ramready
+assign cpu_clkena = (~cpu_req & tg68_armed) | chipready | ramready | np_ready
 `ifdef FASTCHIP_DEPRECATED
 	| fastchip_ready
 `endif
@@ -546,6 +568,25 @@ reg       ac_toccata;
 always @(*) begin
 	autocfg_data = 4'b1111;
 
+`ifdef ENABLE_NANOPORT
+	// nanoport is configured first: Zorro II I/O, 64 KiB, no ROM,
+	// manufacturer 2011 ($07DB, reserved for hackers), product $4E
+	if (np_ac) begin
+		case (chip_addr[6:1])
+			6'h0: autocfg_data = 4'b1100; // Zorro-II card, no memory, no ROM
+			6'h1: autocfg_data = 4'b0001; // not chained, 64k
+			// inverted from here on
+			6'h2: autocfg_data = 4'b1011; // product $4E
+			6'h3: autocfg_data = 4'b0001;
+			6'h8: autocfg_data = 4'b1111; // manufacturer $07DB
+			6'h9: autocfg_data = 4'b1000;
+			6'ha: autocfg_data = 4'b0010;
+			6'hb: autocfg_data = 4'b0100;
+			6'h13: autocfg_data = 4'b1110; // serial 1
+			default: ;
+		endcase
+	end else
+`endif
 `ifdef ENABLE_TOCCATA
 	if (~ac_toccata) begin
 		case (chip_addr[6:1])
@@ -608,7 +649,11 @@ always @(*) begin
 	end
 end
 
+`ifdef ENABLE_NANOPORT
+assign sel_autoconfig = chip_addr[23:16] == 8'b11101000 && (np_ac || (|fastramcfg_d && |autocfg_card)); //$E80000 - $E8FFFF
+`else
 assign sel_autoconfig = |fastramcfg_d && chip_addr[23:16] == 8'b11101000 && |autocfg_card; //$E80000 - $E8FFFF
+`endif
 
 always @(posedge clk) begin
 	reg old_uds;
@@ -621,12 +666,32 @@ always @(posedge clk) begin
 		z3ram_ena1 <= 0;
 		z3ram_base0 <= 1;
 		z3ram_base1 <= 1;
+`ifdef ENABLE_NANOPORT
+		np_ac <= 1'b1;
+		np_ena <= 1'b0;
+		np_base_lo <= 4'h0;
+`endif
 `ifdef ENABLE_TOCCATA
 		ac_toccata<=1'b0;
 		toccata_ena<=1'b0;
 `endif
 	end
 	else if (sel_autoconfig && ~chip_rw && ~chip_uds && old_uds) begin
+`ifdef ENABLE_NANOPORT
+		if (np_ac) begin
+			// $4A: A19-A16 in the upper nibble, $48: A23-A16, configures the card
+			if (chip_addr[6:1] == 6'b100101)
+				np_base_lo <= cpu_dout[15:12];
+			if (chip_addr[6:1] == 6'b100100) begin
+				np_base <= { cpu_dout[15:12], (cpu_dout[11:8] != 4'h0) ? cpu_dout[11:8] : np_base_lo };
+				np_ena <= 1'b1;
+				np_ac <= 1'b0;
+			end
+			// $4C: shut up
+			if (chip_addr[6:1] == 6'b100110)
+				np_ac <= 1'b0;
+		end else
+`endif
 `ifdef ENABLE_TOCCATA
 		if (~ac_toccata) begin
 			if (chip_addr[6:1] == 6'b100100) begin // Register 0x48 - config, Toccata card in ZII io space ($E90000)
@@ -665,7 +730,7 @@ always @(posedge clk) begin
 	end
 end
 
-wire chipreq = cpu_req & ~ramsel
+wire chipreq = cpu_req & ~ramsel & ~sel_nport
 `ifdef FASTCHIP_DEPRECATED
      & ~fastchip_selack
 `endif

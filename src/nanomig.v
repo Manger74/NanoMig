@@ -60,6 +60,20 @@ module nanomig #(
    // explicit ACK after consuming keyboard event
    output       keyboard_ack,
 
+`ifdef ENABLE_NANOPORT
+   // nanoport network card <-> FPGA Companion (SPI target 5)
+   input	 np_spi_strobe,
+   input	 np_spi_start,
+   input [7:0]	 np_spi_din,
+   output [7:0]	 np_spi_dout,
+   output	 np_mcu_int,
+   input	 np_mcu_iack,
+   input	 np_sck,
+   input	 np_sck_rd,
+   input [10:0]	 np_sck_idx,
+   output [7:0]	 np_sck_q,
+`endif
+
    // UART/RS232 for e.g. DiagROM or MIDI
    output	 uart_tx,
    input	 uart_rx,
@@ -301,6 +315,41 @@ always @(posedge clk_sys) begin
 end
 `endif
 
+`ifdef ENABLE_NANOPORT
+// ----------------------- nanoport network card -----------------------
+wire        np_req;
+wire [15:0] np_dout;
+wire        np_ready;
+wire        np_int2;
+
+nanoport nanoport (
+	.clk       ( clk_sys                    ),
+	.reset     ( ~cpu_rst | ~cpu_nrst_out   ),
+
+	.cpu_req   ( np_req                     ),
+	.cpu_we    ( cpu_state == 2'd3          ),
+	.cpu_addr  ( ram_addr[15:1]             ),
+	.cpu_uds_n ( ram_uds                    ),
+	.cpu_lds_n ( ram_lds                    ),
+	.cpu_din   ( ram_din                    ),
+	.cpu_dout  ( np_dout                    ),
+	.cpu_ack   ( np_ready                   ),
+	.int2      ( np_int2                    ),
+
+	.spi_strobe( np_spi_strobe              ),
+	.spi_start ( np_spi_start               ),
+	.spi_din   ( np_spi_din                 ),
+	.spi_dout  ( np_spi_dout                ),
+	.mcu_int   ( np_mcu_int                 ),
+	.mcu_iack  ( np_mcu_iack                ),
+
+	.sck       ( np_sck                     ),
+	.sck_rd    ( np_sck_rd                  ),
+	.sck_idx   ( np_sck_idx                 ),
+	.sck_q     ( np_sck_q                   )
+);
+`endif
+
 cpu_wrapper cpu_wrapper
 (
 	.reset        (cpu_rst         ),
@@ -346,6 +395,12 @@ cpu_wrapper cpu_wrapper
 	.ramdin       (ram_din         ),
 	.ramready     (ram_ready       ),
 	.ramshared    (                ),
+
+`ifdef ENABLE_NANOPORT
+	.np_req       (np_req          ),
+	.np_dout      (np_dout         ),
+	.np_ready     (np_ready        ),
+`endif
 
 	//custom CPU signals
 	.cpustate     (cpu_state       ),
@@ -1635,6 +1690,10 @@ minimig minimig
 `endif
 	//user i/o
 	.cpucfg       (cpucfg ), // CPU config
+
+`ifdef ENABLE_NANOPORT
+	.ext_int2     ( np_int2         ),
+`endif
 
 `ifndef DISABLE_IDE
 	.hdd_led      ( hdd_led         ),
