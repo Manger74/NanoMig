@@ -12,6 +12,10 @@ NETINC  ?= $(VBCC)/netinclude
 nanoport.device: nanoport_asm.s nanoport.c nanoport.h
 	$(VC) +$(VCCFG) -cpu=68000 -O2 -nostdlib -o $@ nanoport_asm.s nanoport.c -lvc -lamiga
 
+# diagnostic build: no INT2, the unit task polls the card every 2 ms
+nanoport_poll.device: nanoport_asm.s nanoport.c nanoport.h
+	$(VC) +$(VCCFG) -cpu=68000 -O2 -nostdlib -DNP_POLL=2000 -o $@ nanoport_asm.s nanoport.c -lvc -lamiga
+
 nptest: nptest.c nanoport.h
 	$(VC) +$(VCCFG) -cpu=68020 -O2 -o $@ nptest.c -lamiga
 
@@ -21,6 +25,6 @@ test: test/test_nanoport.c nanoport.c nanoport.h
 	qemu-m68k test/test_nanoport
 
 clean:
-	rm -f nanoport.device nptest test/test_nanoport
+	rm -f nanoport.device nanoport_poll.device nptest test/test_nanoport
 
 .PHONY: test clean

@@ -29,6 +29,9 @@
 #include <utility/tagitem.h>
 #include <proto/exec.h>
 #include <proto/expansion.h>
+#ifdef NP_POLL
+#include <devices/timer.h>
+#endif
 
 #include "nanoport.h"
 
@@ -48,6 +51,9 @@ static const char np_taskname[] = "nanoport unit";
 UWORD np_rd(struct NPUnit *u, ULONG o);           /* test harness: card model */
 void np_wr(struct NPUnit *u, ULONG o, UWORD v);
 #endif
+
+/* Diagnostic build without INT2 (-DNP_POLL=<us>): the card interrupt stays
+   masked and the unit task polls the card every NP_POLL microseconds. */
 
 /* ------------------------------------------------------------------ helpers */
 
@@ -84,10 +90,16 @@ static void np_flush_list(struct MinList *l, BYTE err, ULONG wire) {
   Permit();
 }
 
+static void np_wr_intena(struct NPUnit *u) {
+#ifndef NP_POLL
+  np_wr(u, R_INTENA, u->intena);
+#endif
+}
+
 static void np_intena(struct NPUnit *u, UWORD set, UWORD clr) {
   Disable();
   u->intena = (u->intena | set) & ~clr;
-  np_wr(u, R_INTENA, u->intena);
+  np_wr_intena(u);
   Enable();
 }
 
@@ -257,7 +269,7 @@ static void np_service_tx(struct NPUnit *u) {
   Disable();
   if(IsListEmpty((struct List *)&u->writeq)) u->intena &= ~INT_TX;
   else u->intena |= INT_TX;
-  np_wr(u, R_INTENA, u->intena);
+  np_wr_intena(u);
   Enable();
 }
 
@@ -313,6 +325,7 @@ static void np_set_online(struct NPUnit *u, BOOL on) {
 
 /* ------------------------------------------------------------------ unit task */
 
+#ifndef NP_POLL
 static void np_unit_task(void) {
   struct NPUnit *u = &np_base->unit;
   BYTE irqsig = AllocSignal(-1), quitsig = AllocSignal(-1);
@@ -332,6 +345,45 @@ static void np_unit_task(void) {
   Forbid();
   Signal(u->caller, SIGF_SINGLE);
 }
+#else
+static void np_unit_task(void) {
+  struct NPUnit *u = &np_base->unit;
+  struct MsgPort *port = CreateMsgPort();
+  struct timerequest *tr = port ? CreateIORequest(port, sizeof(*tr)) : NULL;
+  BYTE quitsig = AllocSignal(-1);
+
+  u->quitmask = 1UL << quitsig;
+  u->irqmask = 0;                            /* stays 0 if the timer can't be opened */
+  if(tr && !OpenDevice(TIMERNAME, UNIT_MICROHZ, (struct IORequest *)tr, 0))
+    u->irqmask = 1UL << port->mp_SigBit;
+  Signal(u->caller, SIGF_SINGLE);
+
+  for(;;) {
+    ULONG sigs;
+    if(u->irqmask) {
+      tr->tr_node.io_Command = TR_ADDREQUEST;
+      tr->tr_time.tv_secs = 0;
+      tr->tr_time.tv_micro = NP_POLL;
+      SendIO((struct IORequest *)tr);
+    }
+    sigs = Wait(u->irqmask | u->quitmask);
+    if(u->irqmask) {
+      if(sigs & u->quitmask) AbortIO((struct IORequest *)tr);
+      WaitIO((struct IORequest *)tr);
+    }
+    if(sigs & u->quitmask) break;
+    np_service_rx(u);
+    np_service_tx(u);
+  }
+
+  if(u->irqmask) CloseDevice((struct IORequest *)tr);
+  DeleteIORequest((struct IORequest *)tr);   /* both accept NULL */
+  DeleteMsgPort(port);
+
+  Forbid();
+  Signal(u->caller, SIGF_SINGLE);
+}
+#endif
 
 static BOOL np_unit_start(struct NPUnit *u) {
   struct ConfigDev *cd;
@@ -388,6 +440,16 @@ static BOOL np_unit_start(struct NPUnit *u) {
   SetSignal(0, SIGF_SINGLE);
   AddTask(t, (APTR)np_unit_task, NULL);
   Wait(SIGF_SINGLE);
+#ifdef NP_POLL
+  if(!u->irqmask) {                          /* no timer.device */
+    SetSignal(0, SIGF_SINGLE);
+    Signal(t, u->quitmask);
+    Wait(SIGF_SINGLE);
+    FreeMem(t, sizeof(struct Task) + NP_STACK);
+    u->task = NULL;
+    return FALSE;
+  }
+#else
 
   u->irq.is_Node.ln_Type = NT_INTERRUPT;
   u->irq.is_Node.ln_Pri = 0;
@@ -395,12 +457,15 @@ static BOOL np_unit_start(struct NPUnit *u) {
   u->irq.is_Data = u;
   u->irq.is_Code = np_irq_server;
   AddIntServer(INTB_PORTS, &u->irq);
+#endif
   return TRUE;
 }
 
 static void np_unit_stop(struct NPUnit *u) {
   np_set_online(u, FALSE);
+#ifndef NP_POLL
   RemIntServer(INTB_PORTS, &u->irq);
+#endif
   np_flush_list(&u->eventq, IOERR_ABORTED, 0);
 
   u->caller = FindTask(NULL);
