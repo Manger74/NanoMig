@@ -96,9 +96,9 @@ module sdram #(
 
 `ifdef ENABLE_FLICKER_FIXER
   ,
-  // flicker fixer field buffer, see flickerfix.v. Each job moves ff_len
-  // bursts of 4 words, burst i at word ff_*_addr+4i <-> line buffer
-  // ff_*_idx+4i. Only for 32 bit sdram.
+  // flicker fixer field buffer, see flickerfix.v. Each job moves ff_len*4
+  // words, word n at ff_*_addr+n <-> line buffer ff_*_idx+n, reads in bursts
+  // of 8 words (ff_len even), writes in bursts of 4. Only for 32 bit sdram.
   input  wire [6:0]  ff_len,
   input  wire        ff_rd_req,
   input  wire [16:0] ff_rd_addr,
@@ -290,30 +290,38 @@ reg p2_ack_i;
 
 `ifdef ENABLE_FLICKER_FIXER
 // ---- flicker fixer job engine ----
-// One ACTIVE plus four single READs/WRITEs to consecutive columns in one
-// 7 MHz slot, the last one with auto precharge. Mode register and the
-// other ports are not affected.
+// One burst per 7 MHz slot, ff_t counts the slot cycles, ACTIVE is on the
+// bus in cycle 1, column commands one cycle after they are set:
+//   write: 4 single WRITEs set in cycles 2..5, the last with auto precharge
+//   read, burst length 1: 8 single READs set in cycles 2..9
+//   read, burst length 4: 2 READs set in cycles 2 and 6
+// The last READ carries auto precharge, so the bank is idle again in cycle
+// 13, in time for the ACTIVE of the next slot. Read data is sampled in
+// cycles 5..12, cycle 12 is already the decision cycle of the next slot.
+// Mode register and the other ports are not affected.
 reg  [1:0]  ff_rqS, ff_wqS;
-reg  [6:0]  ff_rcnt, ff_wcnt;
+reg  [6:0]  ff_rcnt, ff_wcnt;    // bursts done in the current job
 reg         ff_cyc;              // current slot belongs to the flicker fixer
+reg  [3:0]  ff_t;
 reg         ff_cwe;              // ... and writes
-reg  [CAS_WIDTH-3:0] ff_col;     // column of the burst without beat bits
-reg  [7:0]  ff_ix;               // line buffer index without beat bits
+reg  [CAS_WIDTH-3:0] ff_col;     // column / 4
+reg  [7:0]  ff_ix;               // line buffer index / 4
 reg  [31:0] ff_wd;               // write data
 
 wire        ff_rpend = ff_rqS[1] != ff_rd_ack;
 wire        ff_wpend = ff_wqS[1] != ff_wr_ack;
 wire        ff_wsel  = !ff_rpend;  // reads first, they are needed for display
-wire [16:0] ff_w     = (ff_wsel ? ff_wr_addr : ff_rd_addr) + {(ff_wsel ? ff_wcnt : ff_rcnt), 2'b00};
-wire [9:0]  ff_i     = (ff_wsel ? ff_wr_idx  : ff_rd_idx ) + {(ff_wsel ? ff_wcnt : ff_rcnt), 2'b00};
+wire [9:0]  ff_off   = ff_wsel ? {1'b0, ff_wcnt, 2'b00} : {ff_rcnt, 3'b000};
+wire [16:0] ff_w     = (ff_wsel ? ff_wr_addr : ff_rd_addr) + {7'd0, ff_off};
+wire [9:0]  ff_i     = (ff_wsel ? ff_wr_idx  : ff_rd_idx ) + ff_off;
 wire [31:0] ff_a32   = {11'd0, FF_BASE | {4'd0, ff_w}};
 
-// column command for beat b, auto precharge on the last one
-function [RAS_WIDTH-1:0] ff_cas(input [1:0] b);
+// column address of beat b (0..7, reads are 8 word aligned)
+function [RAS_WIDTH-1:0] ff_cas(input [2:0] b, input ap);
   begin
     ff_cas = {RAS_WIDTH{1'b0}};
-    ff_cas[CAS_WIDTH-1:0] = {ff_col, b};
-    ff_cas[10] = &b;
+    ff_cas[CAS_WIDTH-1:0] = {ff_col[CAS_WIDTH-3:1], ff_col[0] | b[2], b[1:0]};
+    ff_cas[10] = ap;
   end
 endfunction
 
@@ -325,12 +333,12 @@ always @(posedge clk, negedge reset_n) begin
   end else begin
     ff_rqS <= {ff_rqS[0], ff_rd_req};
     ff_wqS <= {ff_wqS[0], ff_wr_req};
-    if (state == STATE_LAST && ff_cyc) begin
+    if (ff_cyc && ff_t == 4'd8) begin   // before the next slot is decided
       if (ff_cwe) begin
         if (ff_wcnt == ff_len - 7'd1) begin ff_wcnt <= 7'd0; ff_wr_ack <= ~ff_wr_ack; end
         else ff_wcnt <= ff_wcnt + 7'd1;
       end else begin
-        if (ff_rcnt == ff_len - 7'd1) begin ff_rcnt <= 7'd0; ff_rd_ack <= ~ff_rd_ack; end
+        if (ff_rcnt == {1'b0, ff_len[6:1]} - 7'd1) begin ff_rcnt <= 7'd0; ff_rd_ack <= ~ff_rd_ack; end
         else ff_rcnt <= ff_rcnt + 7'd1;
       end
     end
@@ -376,6 +384,10 @@ always @(posedge clk) begin
   sd_dq  <= 0;
 `ifdef ENABLE_FLICKER_FIXER
   ff_rb_we <= 1'b0;
+  if (ff_cyc) begin
+    ff_t <= ff_t + 4'd1;
+    if (ff_t == 4'd12) ff_cyc <= 1'b0;  // a new slot started below overrides this
+  end
 `endif
 
   case (state)
@@ -383,6 +395,7 @@ always @(posedge clk) begin
       sdram_port <= PORT_IDLE;
 `ifdef ENABLE_FLICKER_FIXER
       ff_cyc     <= 1'b0;
+      ff_t       <= 4'd0;
 `endif
       refreshcnt <= SYNC_CYCLES_PER_REFRESH[REFRESHCNT_MAX_WIDTH-1:0];
 
@@ -448,6 +461,7 @@ always @(posedge clk) begin
         end else if (ff_rpend || ff_wpend) begin
           // above the cpu: the fixer has a deadline every line
           ff_cyc     <= 1'b1;
+          ff_t       <= 4'd1;
           ff_cwe     <= ff_wsel;
           ff_col     <= ff_a32[CAS_WIDTH-1:2];
           ff_ix      <= ff_i[9:2];
@@ -464,10 +478,7 @@ always @(posedge clk) begin
       ff_wb_addr <= {ff_i[9:2], 2'd0};   // first write word, read latency 1
 `endif
     end
-`ifdef ENABLE_FLICKER_FIXER
-    STATE_RAS_WAIT_0:
-      ff_wb_addr <= {ff_ix, 2'd1};
-`endif
+
     STATE_CAS: begin
       sd_addr <= sd_addr_cas;
 
@@ -489,14 +500,7 @@ always @(posedge clk) begin
         end
         default: ;
       endcase
-`ifdef ENABLE_FLICKER_FIXER
-      ff_wb_addr <= {ff_ix, 2'd2};
-`endif
     end
-`ifdef ENABLE_FLICKER_FIXER
-    STATE_CAS_WAIT_0:
-      ff_wb_addr <= {ff_ix, 2'd3};
-`endif
     STATE_READ_0: begin
       case (sdram_port)
         PORT_1 : begin
@@ -510,33 +514,32 @@ always @(posedge clk) begin
     end
     STATE_LAST: begin
       sdram_port <= PORT_IDLE;
-`ifdef ENABLE_FLICKER_FIXER
-      ff_cyc     <= 1'b0;
-`endif
     end
     default: ;
   endcase
 
 `ifdef ENABLE_FLICKER_FIXER
   if (ff_cyc) begin
-    // column commands in CAS .. READ_0, data on the bus one cycle later
-    case (state)
-      STATE_CAS:        begin sd_addr <= ff_cas(2'd0); sd_cmd <= ff_cwe ? CMD_WRITE : CMD_READ; end
-      STATE_CAS_WAIT_0: begin sd_addr <= ff_cas(2'd1); sd_cmd <= ff_cwe ? CMD_WRITE : CMD_READ; end
-      STATE_CAS_WAIT_1: begin sd_addr <= ff_cas(2'd2); sd_cmd <= ff_cwe ? CMD_WRITE : CMD_READ; end
-      STATE_READ_0:     begin sd_addr <= ff_cas(2'd3); sd_cmd <= ff_cwe ? CMD_WRITE : CMD_READ; end
-      default: ;
-    endcase
-    if (state == STATE_CAS || state == STATE_CAS_WAIT_0 ||
-        state == STATE_CAS_WAIT_1 || state == STATE_READ_0) begin
-      ff_wd <= ff_wb_q;
-      sd_dq <= ff_cwe;
-    end
-    // read data, CAS latency 2
-    if (!ff_cwe && state >= STATE_READ_0 && state <= STATE_READ_3) begin
-      ff_rb_d    <= sd_data;
-      ff_rb_addr <= {ff_ix, 2'(state - STATE_READ_0)};
-      ff_rb_we   <= 1'b1;
+    if (ff_cwe) begin
+      // write line buffer, 1 cycle latency, word n on the bus in cycle n+3
+      if (ff_t <= 4'd3) ff_wb_addr <= {ff_ix, 2'(ff_t)};
+      if (ff_t >= 4'd2 && ff_t <= 4'd5) begin
+        sd_cmd  <= CMD_WRITE;
+        sd_addr <= ff_cas(3'(ff_t - 4'd2), ff_t == 4'd5);
+        ff_wd   <= ff_wb_q;
+        sd_dq   <= 1'b1;
+      end
+    end else begin
+      if (CHIP48_BURST ? (ff_t == 4'd2 || ff_t == 4'd6) : (ff_t >= 4'd2 && ff_t <= 4'd9)) begin
+        sd_cmd  <= CMD_READ;
+        sd_addr <= ff_cas(3'(ff_t - 4'd2), CHIP48_BURST ? ff_t == 4'd6 : ff_t == 4'd9);
+      end
+      // read data, CAS latency 2
+      if (ff_t >= 4'd5) begin
+        ff_rb_d    <= sd_data;
+        ff_rb_addr <= {ff_ix[7:1], ff_ix[0] | (ff_t >= 4'd9), 2'(ff_t - 4'd5)};
+        ff_rb_we   <= 1'b1;
+      end
     end
   end
 `endif

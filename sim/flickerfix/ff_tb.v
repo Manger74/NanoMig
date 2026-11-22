@@ -19,7 +19,7 @@ parameter SLOT_PCT = 60;
 parameter FIELDS   = 8;
 parameter LACE     = 1;   // 0: non interlaced, 312 lines per field
 
-localparam X0 = 88, W = 808, K0 = 16, H = 300;
+localparam X0 = 88, W = 832, K0 = 16, H = 300;
 
 reg clk = 0, clk_mem = 0;
 always #17.62 clk = ~clk;       // 28.375 MHz

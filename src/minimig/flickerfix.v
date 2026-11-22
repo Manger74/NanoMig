@@ -11,19 +11,22 @@
 // A single field buffer is enough: each row is prefetched before the current
 // field overwrites it.
 //
-// Memory interface: one read and one write job per line. A job is started by
-// toggling *_req with *_addr/*_idx stable. The memory side then moves fb_len
-// bursts of 4 words, burst i at word address addr+4i and line buffer index
-// idx+4i, through the wb_*/rb_* ports (clk_mem domain) and toggles *_ack when
+// Pixels are stored with 12 bits (the 4 bit per color Amber outputs), 8
+// pixels packed into 3 words: pixel i of a group at bits 12i+11:12i.
+//
+// Memory interface: one read and one write job per line, fb_len*4 words
+// each. A job is started by toggling *_req with *_addr/*_idx stable. The
+// memory side moves the words in bursts (word addr+n <-> line buffer index
+// idx+n) through the wb_*/rb_* ports (clk_mem domain) and toggles *_ack when
 // the whole job is done. A job not done at the next line start is an overrun:
 // that line falls back to plain line doubling.
 //
 
 module flickerfix #(
-  parameter X0 = 88,   // first stored hires pixel, multiple of 8 (burst aligned)
-  parameter W  = 808,  // stored pixels per line (multiple of 8)
+  parameter X0 = 88,   // first stored hires pixel
+  parameter W  = 832,  // stored pixels per line, multiple of 64 (8 word bursts)
   parameter K0 = 16,   // first stored line after vsync
-  parameter H  = 300   // stored lines per field, H*W/2 <= 128k words
+  parameter H  = 300   // stored lines per field, H*W*3/8 <= 128k words
 )(
   input             clk,        // 28 MHz pixel side
   input             en,
@@ -38,7 +41,7 @@ module flickerfix #(
   output reg        weave = 1'b0,
   output reg        overrun = 1'b0, // line transfers not done in time
 
-  output     [6:0]  fb_len,     // bursts per job
+  output     [6:0]  fb_len,     // words per job / 4
   output reg        rd_req = 1'b0,
   output reg [16:0] rd_addr,    // 32 bit word address in field buffer
   output reg [9:0]  rd_idx,     // line buffer index of first word
@@ -56,20 +59,20 @@ module flickerfix #(
   input             rb_we
 );
 
-localparam WPL = W/2;   // words per line
-localparam NB  = W/8;   // bursts per line
+localparam WPL = W*3/8;  // words per line
 
-localparam [8:0] XP = X0/2;
+assign fb_len = WPL/4;
 
-assign fb_len = NB;
-
-// line buffers, two lines each, indexed by {bank, pixel pair}
+// line buffers, two lines each, indexed by {bank, word}. The read buffer is
+// split into even and odd words so a pixel spanning two words is one read.
 reg [31:0] wbuf [0:1023];
-reg [31:0] rbuf [0:1023];
+reg [31:0] rbuf0 [0:511];
+reg [31:0] rbuf1 [0:511];
 
 always @(posedge clk_mem) begin
   wb_q <= wbuf[wb_addr];
-  if (rb_we) rbuf[rb_addr] <= rb_d;
+  if (rb_we && !rb_addr[0]) rbuf0[{rb_addr[9], rb_addr[8:1]}] <= rb_d;
+  if (rb_we &&  rb_addr[0]) rbuf1[{rb_addr[9], rb_addr[8:1]}] <= rb_d;
 end
 
 // ---------------- field and line tracking ----------------
@@ -116,14 +119,14 @@ always @(posedge clk) begin
       rv[~per] <= 1'b1;
       rd_req   <= ~rd_req;
       rd_addr  <= rrow[8:0] * WPL;
-      rd_idx   <= {~per, XP};
+      rd_idx   <= {~per, 9'd0};
     end
 
     // write line captured during the line just finished
     if (weave && wrow < H && !wr_busy) begin
       wr_req   <= ~wr_req;
       wr_addr  <= wrow[8:0] * WPL;
-      wr_idx   <= {per, XP};
+      wr_idx   <= {per, 9'd0};
     end
   end
 
@@ -138,22 +141,42 @@ always @(posedge clk) begin
 end
 
 // ---------------- capture current line ----------------
-reg [14:0] evn;
+// pixel q = 8g+i, word 3g+0 complete at i=2, 3g+1 at i=5, 3g+2 at i=7
+wire [9:0]  q   = wr_ptr[10:1] - X0;
+wire [11:0] px  = {pix_in[14:11], pix_in[9:6], pix_in[4:1]};
+wire [8:0]  g3  = {q[9:3], 1'b0} + q[9:3];
+reg  [11:0] pa, pb;
+reg  [7:0]  pc;
 always @(posedge clk)
-  if (wr_ptr[0]) begin
-    if (!wr_ptr[1]) evn <= pix_in;
-    else wbuf[{per, wr_ptr[10:2]}] <= {1'b0, evn, 1'b0, pix_in};
-  end
+  if (wr_ptr[0])
+    case (q[2:0])
+      3'd0, 3'd3, 3'd6: pa <= px;
+      3'd1, 3'd4:       pb <= px;
+      3'd2: begin wbuf[{per, g3}]        <= {px[7:0], pb, pa};           pc <= {4'd0, px[11:8]}; end
+      3'd5: begin wbuf[{per, g3 + 9'd1}] <= {px[3:0], pb, pa, pc[3:0]}; pc <= px[11:4]; end
+      3'd7:       wbuf[{per, g3 + 9'd2}] <= {px, pa, pc};
+    endcase
 
 // ---------------- output previous field ----------------
-reg [31:0] rbq;
-reg        sel1, use1;
+// pixel q starts at bit 12q: word w = 3q/8, shift 4*(3q mod 8)
+wire [9:0]  oq  = rd_ptr - X0;
+wire [11:0] o3  = {oq, 1'b0} + oq;   // w = o3[11:3]
+reg  [31:0] r0q, r1q;
+reg  [2:0]  sh1;
+reg         odd1, use1;
 always @(posedge clk) begin
-  rbq     <= rbuf[{~per, rd_ptr[9:1]}];
-  sel1    <= rd_ptr[0];
-  use1    <= first_half && rv[~per] && rd_ptr >= X0 && rd_ptr < X0 + W;
-  pix_out <= sel1 ? rbq[14:0] : rbq[30:16];
+  // words w and w+1, one from each half
+  r0q  <= rbuf0[{~per, o3[11:4] + {7'd0, o3[3]}}];
+  r1q  <= rbuf1[{~per, o3[11:4]}];
+  odd1 <= o3[3];
+  sh1  <= o3[2:0];
+  use1 <= first_half && rv[~per] && oq < W;
   pix_use <= use1;
 end
+
+wire [63:0] owin = odd1 ? {r0q, r1q} : {r1q, r0q};
+wire [11:0] opx  = owin[{sh1, 2'b00} +: 12];
+always @(posedge clk)
+  pix_out <= {opx[11:8], 1'b0, opx[7:4], 1'b0, opx[3:0], 1'b0};
 
 endmodule
