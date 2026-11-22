@@ -20,7 +20,7 @@ parameter BURST    = 0;     // CHIP48_BURST: 1 = burst 4 mode register (020/aga)
 parameter SYNC_DLY = 4;
 parameter FIELDS   = 6;
 
-localparam X0 = 88, W = 808, K0 = 16, H = 300;
+localparam X0 = 88, W = 832, K0 = 16, H = 300;
 
 // 85.125 MHz sdram clock, 28.375 MHz = /3, 7 MHz enable = /4
 reg clk85 = 0;
