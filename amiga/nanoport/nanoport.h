@@ -84,7 +84,7 @@ struct NPUnit {
   struct Interrupt irq;
   struct Task *caller;         /* task waiting for the unit task to start/stop */
   ULONG quitmask;
-  struct SignalSemaphore txlock;
+  BOOL txbusy;                 /* TX slots in use by np_tx_frame(), see np_tx_claim() */
   struct MinList readq;        /* CMD_READ */
   struct MinList orphanq;      /* S2_READORPHAN */
   struct MinList writeq;       /* writes waiting for a free TX slot */

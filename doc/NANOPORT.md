@@ -120,6 +120,14 @@ bridged.
 - The INT2 server only masks the card interrupt and signals the unit
   task. The task processes all pending frames before it unmasks the
   interrupt, so a burst of frames causes a single interrupt.
+- BeginIO() may also be called from a software interrupt of the stack.
+  Request lists and the TX slots are therefore guarded with Disable()
+  (a busy flag for the slots), not with Forbid() or a semaphore.
+- Diagnostic builds: `make nanoport_poll.device` (no INT2, the unit task
+  polls the card every 2 ms via timer.device), `-DNP_NO_DMA` (without the
+  DMA hooks of the stack). `nptest` checks the card without driver and
+  stack (`nptest` register test, `nptest PING <own ip> <target ip>`
+  ping flood with checked replies).
 
 Build with vbcc: `build.bat` (Windows, kusma/amiga-dev) or `make` in
 `amiga/nanoport` (Linux, vbcc of the AmigaPorts m68k-amigaos-gcc package
@@ -130,14 +138,16 @@ and qemu-m68k, exec and the card are mocked).
 ## Tests
 
 - `sim/nanoport`: `make unit` simulates the card and the SPI side with
-  iverilog (back to back SPI at 19.2 and 48 MHz and with gaps).
+  iverilog (back to back SPI at 19.2 and 48 MHz and with gaps, ring reset
+  in the same cycle as an MCU pointer update).
 - `sim/test_rom/nanoport_test.s`: test ROM for the verilator simulation
   of the whole core (autoconfig chain with Fast RAM, registers, TX
   rings, INT2 via PORTS, read speed), see `sim/nanoport/Makefile`.
 
 ## Limits
 
-- Not yet tested on real hardware.
+- Real hardware: `nptest PING` ran about 700 MB without a corrupted
+  frame. Crashes under heavy load with Roadshow are being investigated.
 - 68020 build only for now, the 68000 build (FX68K) has no fast path.
 - IPv4/ARP only, no IPv6.
 - Throughput is limited by WiFi and SPI (about 2 MB/s raw at 19.2 MHz,

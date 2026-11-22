@@ -207,33 +207,6 @@ always @(posedge clk) begin
     if(mcu_iack) mcu_int <= 1'b0;
     if(reset_d)  mcu_int <= 1'b1;   // once after reset: the Amiga went offline
 
-    // cpu register writes
-    if(cpu_wr && sel_reg) begin
-      case(cpu_addr[4:1])
-	4'h3: if(rx_count != 0) begin           // RXACK
-	   rx_head <= rx_head + 1'd1;
-	   if(rx_full) mcu_int <= 1'b1;
-	end
-	4'h4: if(tx_free != 0) begin            // TXGO
-	   tx_tail <= tx_tail + 1'd1;
-	   mcu_int <= 1'b1;
-	end
-	4'h5: intena <= cpu_din[1:0];
-	4'h6: begin
-	   ctrl <= { 1'b0, cpu_din[6:0] };
-	   mcu_int <= 1'b1;
-	   if(cpu_din[7]) begin
-	      rx_head <= 0;
-	      rx_tail <= 0;
-	      tx_head <= 0;
-	      tx_tail <= 0;
-	      put_ok  <= 1'b0;
-	   end
-	end
-	default: ;
-      endcase
-    end
-
     // MCU bytes
     if(spi_strobe) begin
       if(spi_start) begin
@@ -267,6 +240,34 @@ always @(posedge clk) begin
 	    mac <= { mac[39:0], spi_din };
 	end
       end
+    end
+
+    // cpu register writes, after the MCU side so that a ring reset wins
+    // over a pointer update of the MCU in the same cycle
+    if(cpu_wr && sel_reg) begin
+      case(cpu_addr[4:1])
+	4'h3: if(rx_count != 0) begin           // RXACK
+	   rx_head <= rx_head + 1'd1;
+	   if(rx_full) mcu_int <= 1'b1;
+	end
+	4'h4: if(tx_free != 0) begin            // TXGO
+	   tx_tail <= tx_tail + 1'd1;
+	   mcu_int <= 1'b1;
+	end
+	4'h5: intena <= cpu_din[1:0];
+	4'h6: begin
+	   ctrl <= { 1'b0, cpu_din[6:0] };
+	   mcu_int <= 1'b1;
+	   if(cpu_din[7]) begin
+	      rx_head <= 0;
+	      rx_tail <= 0;
+	      tx_head <= 0;
+	      tx_tail <= 0;
+	      put_ok  <= 1'b0;
+	   end
+	end
+	default: ;
+      endcase
     end
   end
 end

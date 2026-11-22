@@ -56,7 +56,7 @@ void ReplyMsg(struct Message *m) { replied[nreplied++] = (struct IOSana2Req *)m;
 APTR AllocMem(ULONG n, ULONG f) { return calloc(1, n); }
 void FreeMem(APTR p, ULONG n) { free(p); }
 void CopyMem(CONST APTR s, APTR d, ULONG n) { memcpy(d, s, n); }
-void Signal(struct Task *t, ULONG s) {}
+static int nsignals; void Signal(struct Task *t, ULONG s) { nsignals++; }
 ULONG Wait(ULONG s) { return s; }
 BYTE AllocSignal(LONG n) { return 16; }
 ULONG SetSignal(ULONG a, ULONG b) { return 0; }
@@ -67,7 +67,6 @@ static struct Library explib; struct Library *OpenLibrary(CONST_STRPTR n, ULONG 
 void CloseLibrary(struct Library *l) {}
 static struct ConfigDev cdev; struct ConfigDev *FindConfigDev(CONST struct ConfigDev *o, LONG m, LONG p) {
   if(m != 2011 || p != 0x4e) return NULL; cdev.cd_BoardAddr = card; return &cdev; }
-static int lock_busy; ULONG AttemptSemaphore(struct SignalSemaphore *s) { return !lock_busy; } void InitSemaphore(struct SignalSemaphore *s) {} void ObtainSemaphore(struct SignalSemaphore *s) {} void ReleaseSemaphore(struct SignalSemaphore *s) {}
 struct Library *MakeLibrary(CONST APTR v, CONST APTR s, ULONG (*CONST i)(), ULONG sz, ULONG seg) { UBYTE *m = calloc(1, sz+64); struct Library *l=(struct Library*)(m+64); l->lib_NegSize=64; l->lib_PosSize=sz; return l; }
 void AddDevice(struct Device *d) {}
 void np_copy(APTR to, APTR from, ULONG n) { memcpy(to, from, n); }
@@ -177,14 +176,26 @@ int main(int argc, char **argv) {
   struct IOSana2Req *w4 = newreq(CMD_WRITE, 0x800, &wb); w4->ios2_BufferManagement = o1->ios2_BufferManagement; w4->ios2_DataLength = 1501;
   np_dev_beginio(w4, base); CHECK(w4->ios2_Req.io_Error == S2ERR_MTU_EXCEEDED);
 
-  /* tx lock held by the unit task: the write is queued, never waited for */
-  lock_busy = 1; nreplied = 0;
+  /* TX slots in use (e.g. a write from a software interrupt on top of the
+     unit task): the write is queued, never waited for */
+  u->txbusy = TRUE; nreplied = 0;
   struct IOSana2Req *w5 = newreq(CMD_WRITE, 0x800, &wb); w5->ios2_BufferManagement = o1->ios2_BufferManagement; w5->ios2_DataLength = 70;
   np_dev_beginio(w5, base);
-  CHECK(!was_replied(w5) && (intena_hw & INT_TX) && !IsListEmpty((struct List *)&u->writeq));
-  lock_busy = 0;
+  CHECK(!was_replied(w5) && !IsListEmpty((struct List *)&u->writeq));
+  np_service_tx(u);                       /* owner still busy: nothing happens */
+  CHECK(!was_replied(w5) && u->txbusy);
+  nsignals = 0; np_tx_release(u); CHECK(nsignals == 1 && !u->txbusy);   /* owner done: kicks the unit task */
   np_service_tx(u);
-  CHECK(was_replied(w5) && txget(out) == 84 && !(intena_hw & INT_TX));
+  CHECK(was_replied(w5) && txget(out) == 84 && !(intena_hw & INT_TX) && !u->txbusy);
+  /* a write behind a queued one keeps the order */
+  u->txbusy = TRUE;
+  struct IOSana2Req *w6 = newreq(CMD_WRITE, 0x800, &wb); w6->ios2_BufferManagement = o1->ios2_BufferManagement; w6->ios2_DataLength = 71;
+  np_dev_beginio(w6, base); u->txbusy = FALSE;
+  struct IOSana2Req *w7 = newreq(CMD_WRITE, 0x800, &wb); w7->ios2_BufferManagement = o1->ios2_BufferManagement; w7->ios2_DataLength = 72;
+  nsignals = 0; np_dev_beginio(w7, base);
+  CHECK(!was_replied(w7) && nsignals == 1);
+  np_service_tx(u);
+  CHECK(was_replied(w6) && was_replied(w7) && txget(out) == 85 && txget(out) == 86 && !u->txbusy);
 
   /* second opener with DMA hook */
   struct IOSana2Req *o2 = newreq(0,0,NULL); o2->ios2_BufferManagement = tags2;

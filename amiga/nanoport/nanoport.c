@@ -16,6 +16,12 @@
  *    unit task, which then drains all pending frames before it unmasks
  *    the interrupt again
  *
+ * BeginIO() may be called from a software interrupt (e.g. by a stack that
+ * processes a received frame in the softint of its reply port, which then
+ * runs on top of our unit task). Request lists and the TX slots are
+ * therefore guarded with Disable(), never with Forbid() or semaphores:
+ * neither keeps a software interrupt out.
+ *
  * Build with vbcc, see build.bat.
  */
 
@@ -75,19 +81,19 @@ static void np_newlist(struct MinList *l) {   /* NewList() lives in amiga.lib */
 
 static void np_queue(struct MinList *l, struct IOSana2Req *ios) {
   ios->ios2_Req.io_Flags &= ~IOF_QUICK;
-  Forbid();
+  Disable();
   AddTail((struct List *)l, (struct Node *)ios);
-  Permit();
+  Enable();
 }
 
 static void np_flush_list(struct MinList *l, BYTE err, ULONG wire) {
   struct IOSana2Req *ios;
-  Forbid();
+  Disable();
   while((ios = (struct IOSana2Req *)RemHead((struct List *)l))) {
     np_error(ios, err, wire);
     ReplyMsg(&ios->ios2_Req.io_Message);
   }
-  Permit();
+  Enable();
 }
 
 static void np_wr_intena(struct NPUnit *u) {
@@ -105,7 +111,7 @@ static void np_intena(struct NPUnit *u, UWORD set, UWORD clr) {
 
 static void np_event(struct NPUnit *u, ULONG event) {
   struct IOSana2Req *ios, *next;
-  Forbid();
+  Disable();
   for(ios = (struct IOSana2Req *)u->eventq.mlh_Head;
       (next = (struct IOSana2Req *)ios->ios2_Req.io_Message.mn_Node.ln_Succ); ios = next) {
     if(ios->ios2_WireError & event) {
@@ -114,7 +120,7 @@ static void np_event(struct NPUnit *u, ULONG event) {
       ReplyMsg(&ios->ios2_Req.io_Message);
     }
   }
-  Permit();
+  Enable();
 }
 
 static int np_addr_eq(const UBYTE *a, const UBYTE *b) {
@@ -186,7 +192,7 @@ static void np_rx_frame(struct NPUnit *u, UBYTE *frame, ULONG len) {
 
   type = *(UWORD *)(frame + 12);
 
-  Forbid();
+  Disable();
   for(ios = (struct IOSana2Req *)u->readq.mlh_Head;
       (next = (struct IOSana2Req *)ios->ios2_Req.io_Message.mn_Node.ln_Succ); ios = next) {
     if(ios->ios2_PacketType == type) {
@@ -196,7 +202,7 @@ static void np_rx_frame(struct NPUnit *u, UBYTE *frame, ULONG len) {
   }
   if(!hit) hit = (struct IOSana2Req *)RemHead((struct List *)&u->orphanq);
   else Remove((struct Node *)hit);
-  Permit();
+  Enable();
 
   if(!hit) {
     u->stats.UnknownTypesReceived++;
@@ -219,7 +225,7 @@ static void np_service_rx(struct NPUnit *u) {
 
 /* ------------------------------------------------------------------ transmit */
 
-/* copy one write request into the next TX slot, txlock is held */
+/* copy one write request into the next TX slot, the caller owns the slots */
 static void np_tx_frame(struct NPUnit *u, struct IOSana2Req *ios) {
   struct NPOpener *op = ios->ios2_BufferManagement;
   UBYTE *slot = (UBYTE *)u->hw + NP_TX_BASE + ((ULONG)((np_rd(u, R_PTRS) >> 4) & 15) << 11);
@@ -251,26 +257,55 @@ static void np_tx_frame(struct NPUnit *u, struct IOSana2Req *ios) {
   u->stats.PacketsSent++;
 }
 
+/* Only one context at a time may fill a TX slot: the unit task, a writer in
+   BeginIO() or a software interrupt that interrupted either of them. The
+   owner sets txbusy under Disable(), a writer that finds it set queues its
+   frame in the same Disable() section, so the owner sees it on release.
+   np_tx_release() gives the slots back, frames queued meanwhile are sent by
+   the unit task: right away if a slot is free, else on INT_TX. */
+static void np_tx_release(struct NPUnit *u) {
+  BOOL kick = FALSE;
+  Disable();
+  u->txbusy = FALSE;
+  if(!IsListEmpty((struct List *)&u->writeq)) {
+    if(ST_TXFREE(np_rd(u, R_STATUS))) kick = TRUE;
+    else {
+      u->intena |= INT_TX;
+      np_wr_intena(u);
+    }
+  }
+  Enable();
+  if(kick) Signal(u->task, u->irqmask);
+}
+
 static void np_service_tx(struct NPUnit *u) {
   struct IOSana2Req *ios;
 
-  ObtainSemaphore(&u->txlock);
-  while(ST_TXFREE(np_rd(u, R_STATUS))) {
-    Forbid();
+  for(;;) {
+    Disable();
+    if(u->txbusy) {                     /* the owner kicks us when done */
+      Enable();
+      return;
+    }
+    if(IsListEmpty((struct List *)&u->writeq) || !ST_TXFREE(np_rd(u, R_STATUS))) {
+      /* INT_TX only while frames wait for a slot */
+      if(IsListEmpty((struct List *)&u->writeq)) u->intena &= ~INT_TX;
+      else u->intena |= INT_TX;
+      np_wr_intena(u);
+      Enable();
+      return;
+    }
     ios = (struct IOSana2Req *)RemHead((struct List *)&u->writeq);
-    Permit();
-    if(!ios) break;
+    u->txbusy = TRUE;
+    Enable();
+
     np_tx_frame(u, ios);
     ReplyMsg(&ios->ios2_Req.io_Message);
-  }
-  ReleaseSemaphore(&u->txlock);
 
-  /* atomic with the queue check: np_write() may queue a frame any time */
-  Disable();
-  if(IsListEmpty((struct List *)&u->writeq)) u->intena &= ~INT_TX;
-  else u->intena |= INT_TX;
-  np_wr_intena(u);
-  Enable();
+    Disable();
+    u->txbusy = FALSE;
+    Enable();
+  }
 }
 
 /* CMD_WRITE, S2_BROADCAST, S2_MULTICAST */
@@ -286,20 +321,26 @@ static BOOL np_write(struct NPUnit *u, struct IOSana2Req *ios) {
     return TRUE;
   }
 
-  /* Never wait for the lock here: the unit task holds it while it calls the
-     stack's copy hooks, and the stack may well be the caller and hold its
-     own locks. If the lock is busy, the frame is queued and sent by the unit
-     task (INT_TX fires as soon as a slot is free). */
-  if(AttemptSemaphore(&u->txlock)) {
-    if(IsListEmpty((struct List *)&u->writeq) && ST_TXFREE(np_rd(u, R_STATUS))) {
-      np_tx_frame(u, ios);
-      ReleaseSemaphore(&u->txlock);
-      return TRUE;
-    }
-    ReleaseSemaphore(&u->txlock);
+  /* Never wait here: the caller may hold locks of the stack that the unit
+     task needs in the copy hooks. */
+  Disable();
+  if(u->txbusy) {                        /* the owner sends it when done */
+    ios->ios2_Req.io_Flags &= ~IOF_QUICK;
+    AddTail((struct List *)&u->writeq, (struct Node *)ios);
+    Enable();
+    return FALSE;
+  }
+  u->txbusy = TRUE;
+  Enable();
+
+  /* straight into a free slot unless frames are waiting (keeps the order) */
+  if(IsListEmpty((struct List *)&u->writeq) && ST_TXFREE(np_rd(u, R_STATUS))) {
+    np_tx_frame(u, ios);
+    np_tx_release(u);
+    return TRUE;
   }
   np_queue(&u->writeq, ios);
-  np_intena(u, INT_TX, 0);
+  np_tx_release(u);
   return FALSE;
 }
 
@@ -418,7 +459,7 @@ static BOOL np_unit_start(struct NPUnit *u) {
   np_newlist(&u->orphanq);
   np_newlist(&u->writeq);
   np_newlist(&u->eventq);
-  InitSemaphore(&u->txlock);
+  u->txbusy = FALSE;
 
   u->intena = 0;
   np_wr(u, R_INTENA, 0);
@@ -696,19 +737,19 @@ static ULONG np_dev_abortio(__reg("a1") struct IOSana2Req *ios, __reg("a6") stru
 
   lists[0] = &u->readq; lists[1] = &u->orphanq; lists[2] = &u->writeq; lists[3] = &u->eventq;
 
-  Forbid();
+  Disable();
   for(i = 0; i < 4; i++) {
     for(n = (struct Node *)lists[i]->mlh_Head; n->ln_Succ; n = n->ln_Succ) {
       if(n == (struct Node *)ios) {
 	Remove(n);
 	ios->ios2_Req.io_Error = IOERR_ABORTED;
 	ReplyMsg(&ios->ios2_Req.io_Message);
-	Permit();
+	Enable();
 	return 0;
       }
     }
   }
-  Permit();
+  Enable();
   return IOERR_NOCMD;    /* not queued (anymore) */
 }
 

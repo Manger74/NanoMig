@@ -1,7 +1,8 @@
 # nanoport network card tests
 #
 #   make unit   - iverilog: nanoport.v + mcu_spi.v, cpu bus and SPI (back to back
-#                 and with gaps between the bytes, 19.2 and 48 MHz)
+#                 and with gaps between the bytes, 19.2 and 48 MHz), ring reset
+#                 racing with MCU pointer updates
 #   make rom    - test rom for the full verilator simulation, run it with
 #                 DEFINES += -DENABLE_NANOPORT in ../Makefile and
 #                 KICK=nanoport/nanoport_test.bin AGA=1 FASTRAM=1 ../nanomig
@@ -14,6 +15,8 @@ unit:
 	vvp -n tb_nanoport
 	iverilog -g2012 -o tb_b2b tb_b2b.v ../../src/misc/nanoport.v
 	vvp -n tb_b2b
+	iverilog -g2012 -o tb_race tb_race.v ../../src/misc/nanoport.v
+	vvp -n tb_race
 
 rom: nanoport_test.bin
 
@@ -25,4 +28,4 @@ nanoport_test.bin: ../test_rom/nanoport_test.s
 	rm -f nanoport_test.o nanoport_test.elf
 
 clean:
-	rm -f tb_nanoport tb_b2b nanoport_test.bin
+	rm -f tb_nanoport tb_b2b tb_race nanoport_test.bin
