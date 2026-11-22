@@ -62,6 +62,25 @@ module Amber
 	output 	reg [3:0] blue_out,		//blue component video out
 	output	reg _hsync_out,			//horizontal synchronisation out
 	output	reg _vsync_out			//vertical synchronisation out
+`ifdef ENABLE_FLICKER_FIXER
+	,
+	input	ff_en,				//enable flicker fixer (weave) in interlace
+	output	[6:0] ff_len,			//field buffer interface, see flickerfix.v
+	output	ff_rd_req,
+	output	[16:0] ff_rd_addr,
+	output	[9:0] ff_rd_idx,
+	input	ff_rd_ack,
+	output	ff_wr_req,
+	output	[16:0] ff_wr_addr,
+	output	[9:0] ff_wr_idx,
+	input	ff_wr_ack,
+	input	clk_mem,
+	input	[9:0] ff_wb_addr,
+	output	[31:0] ff_wb_q,
+	input	[9:0] ff_rb_addr,
+	input	[31:0] ff_rb_d,
+	input	ff_rb_we
+`endif
 );
 
 //local signals
@@ -175,6 +194,29 @@ end
 //delayed line buffer pixel by one clock cycle
 always @(posedge clk28m)
    lbfo2 <= lbfo;
+
+`ifdef ENABLE_FLICKER_FIXER
+// replace the second copy of each line by the previous field
+wire [14:0] ff_pix;
+wire        ff_use, ff_weave;
+
+flickerfix ff (
+	.clk(clk28m), .en(ff_en), .hss(hss), .wr_ptr(wr_ptr), .rd_ptr(rd_ptr[9:0]),
+	.first_half(~scanline_ena), .vs_n(_vsync_in), .pix_in({red, green, blue}),
+	.pix_out(ff_pix), .pix_use(ff_use), .weave(ff_weave), .overrun(),
+	.fb_len(ff_len),
+	.rd_req(ff_rd_req), .rd_addr(ff_rd_addr), .rd_idx(ff_rd_idx), .rd_ack(ff_rd_ack),
+	.wr_req(ff_wr_req), .wr_addr(ff_wr_addr), .wr_idx(ff_wr_idx), .wr_ack(ff_wr_ack),
+	.clk_mem(clk_mem), .wb_addr(ff_wb_addr), .wb_q(ff_wb_q),
+	.rb_addr(ff_rb_addr), .rb_d(ff_rb_d), .rb_we(ff_rb_we)
+);
+
+wire [15:0] lbfo2x = ff_use ? {lbfo2[15], ff_pix} : lbfo2;
+wire        vfilterx = vfilter & ~ff_weave;  // would mix bob and weave rows
+`else
+wire [15:0] lbfo2x = lbfo2;
+wire        vfilterx = vfilter;
+`endif
    
 // output pixel generation - vertical interpolation
 always @(posedge clk28m)
@@ -182,7 +224,7 @@ begin
 		_hsync_out <= dblscan ? lbfo2[15] : _csync_in;
 		_vsync_out <= dblscan ? _vsync_in : 1'b1;
 
-		if (vfilter)
+		if (vfilterx)
 		begin //vertical interpolation
 			t_red    <= ( lbfo2[14:10] + lbfdo[14:10] ) / 4;
 			t_green  <= ( lbfo2[9:5] + lbfdo[9:5] ) / 4;
@@ -190,9 +232,9 @@ begin
 		end
 		else
 		begin //no vertical interpolation
-			t_red    <= lbfo2[14:11];
-			t_green  <= lbfo2[9:6];
-			t_blue   <= lbfo2[4:1];
+			t_red    <= lbfo2x[14:11];
+			t_green  <= lbfo2x[9:6];
+			t_blue   <= lbfo2x[4:1];
 		end
 end
 
