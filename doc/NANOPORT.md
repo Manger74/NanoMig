@@ -19,7 +19,7 @@ path, not on the chip bus); the CPU type in the OSD can still be
 ## Installation
 
 1. Flash the core built from `top_020.sv` and a FPGA Companion
-   firmware with nanoport support (branch `SANA_II`).
+   firmware with nanoport support (branch `NANO_PORT`).
 2. Copy `nanoport.device` (built from `amiga/nanoport`, see below) to
    `DEVS:Networks/`.
 3. Roadshow: create `DEVS:NetInterfaces/nanoport`:
