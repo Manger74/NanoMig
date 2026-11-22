@@ -20,7 +20,7 @@
 //
 
 module flickerfix #(
-  parameter X0 = 88,   // first stored hires pixel (even)
+  parameter X0 = 88,   // first stored hires pixel, multiple of 8 (burst aligned)
   parameter W  = 808,  // stored pixels per line (multiple of 8)
   parameter K0 = 16,   // first stored line after vsync
   parameter H  = 300   // stored lines per field, H*W/2 <= 128k words
