@@ -108,6 +108,27 @@ module nanomig (
    output [15:0] fastram_din,
    output	 fastram_wr,
    input	 fastram_ready
+
+`ifdef ENABLE_FLICKER_FIXER
+   ,
+   // flicker fixer field buffer, see minimig/flickerfix.v
+   input	 ff_en,
+   input	 clk_mem,	 // sdram clock
+   output [6:0]	 ff_len,
+   output	 ff_rd_req,
+   output [16:0] ff_rd_addr,
+   output [9:0]	 ff_rd_idx,
+   input	 ff_rd_ack,
+   output	 ff_wr_req,
+   output [16:0] ff_wr_addr,
+   output [9:0]	 ff_wr_idx,
+   input	 ff_wr_ack,
+   input [9:0]	 ff_wb_addr,
+   output [31:0] ff_wb_q,
+   input [9:0]	 ff_rb_addr,
+   input [31:0]	 ff_rb_d,
+   input	 ff_rb_we
+`endif
 ); 
 `ifndef GATEMATE
  `ifndef LATTICE
@@ -213,7 +234,13 @@ wire [1:0] cpucfg = cpu_config; // CPU-Type: 00 = 68000, 01 = 68010, 11 = 68020
 wire [1:0] chipram_config = memory_config[1:0];
 `ifndef ENABLE_RAM32
 // steal 1.5MiB SlowRAM when FastRAM is set to 2'b11
-wire [1:0] slowram_config = (fastram_config[1:0] != 2'b11 ? memory_config[3:2] : 2'b00);
+`ifdef ENABLE_FLICKER_FIXER
+// SlowRAM 1.5MiB would reach into the flicker fixer buffer, limit to 1MiB
+wire [1:0] slowram_req    = { memory_config[3], memory_config[2] & ~memory_config[3] };
+`else
+wire [1:0] slowram_req    = memory_config[3:2];
+`endif
+wire [1:0] slowram_config = (fastram_config[1:0] != 2'b11 ? slowram_req : 2'b00);
 `else
 wire [1:0] slowram_config = memory_config[3:2];
 `endif
@@ -1651,6 +1678,14 @@ Amber AMBER
 	.blue_out(b),		        //blue component video out
 	._hsync_out(hs),		//horizontal synchronisation out
 	._vsync_out(vs)			//vertical synchronisation out
+`ifdef ENABLE_FLICKER_FIXER
+	,
+	.ff_en(ff_en), .ff_len(ff_len),
+	.ff_rd_req(ff_rd_req), .ff_rd_addr(ff_rd_addr), .ff_rd_idx(ff_rd_idx), .ff_rd_ack(ff_rd_ack),
+	.ff_wr_req(ff_wr_req), .ff_wr_addr(ff_wr_addr), .ff_wr_idx(ff_wr_idx), .ff_wr_ack(ff_wr_ack),
+	.clk_mem(clk_mem), .ff_wb_addr(ff_wb_addr), .ff_wb_q(ff_wb_q),
+	.ff_rb_addr(ff_rb_addr), .ff_rb_d(ff_rb_d), .ff_rb_we(ff_rb_we)
+`endif
  );
     
 endmodule

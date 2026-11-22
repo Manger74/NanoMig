@@ -644,7 +644,10 @@ always @(posedge clk) begin
 				if (fastramcfg_d[1:0] == 2'b11) begin
 					case (autocfg_card)
 						2'b01: autocfg_card <= 2'b10;  // Extra 1MiB of RAM stolen from SlowRAM
+`ifndef ENABLE_FLICKER_FIXER
+						// sdram $700000-$77FFFF is the flicker fixer field buffer otherwise
 						2'b10: autocfg_card <= 2'b11;  // Extra 0.5MiB of RAM stolen from SlowRAM
+`endif
 						default: ;
 					endcase
 				end

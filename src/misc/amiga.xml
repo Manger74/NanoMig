@@ -35,16 +35,16 @@
     </action>      
   </actions>
 
-	<!--IS tang_nano20k -->
+	<!--IS tang_nano20k tang_nano20k_ff -->
   		<menu label="NanoMig 500+">
   	<!--END-->
-	<!--IS tang_nano20k_020 -->
+	<!--IS tang_nano20k_020 tang_nano20k_020_ff -->
   		<menu label="NanoMig 1200">
   	<!--END-->
 	<!--IS tang_nano20k_lcd -->
   		<menu label="NanoMig 1200 LCD">
   	<!--END-->
-	<!--NOT tang_nano20k tang_nano20k_020 tang_nano20k_lcd -->
+	<!--NOT tang_nano20k tang_nano20k_ff tang_nano20k_020 tang_nano20k_020_ff tang_nano20k_lcd -->
   		<menu label="NanoMig">
   	<!--END-->
 			
@@ -58,7 +58,7 @@
 	  <listentry label="68020" value="2"/>
 	</list>
 	<!--END-->
-	<!--IS tang_nano20k_020 tang_nano20k_lcd -->
+	<!--IS tang_nano20k_020 tang_nano20k_020_ff tang_nano20k_lcd -->
 	<list label="CPU:" id="T" default="1" action="reset">
 	<listentry label="68000" value="0"/>
 	<listentry label="68020" value="1"/>
@@ -68,7 +68,7 @@
 	<listentry label="OCS-A500" value="0"/>
 	<listentry label="OCS-A1000" value="1"/>
 	<listentry label="ECS" value="2"/>
-	<!--IS mistle_gw5a_25 tang_nano20k_020 tang_nano20k_lcd -->
+	<!--IS mistle_gw5a_25 tang_nano20k_020 tang_nano20k_020_ff tang_nano20k_lcd -->
 	<listentry label="AGA" value="3"/>
 	<!--END-->
       </list>
@@ -87,7 +87,9 @@
 	<listentry label="None" value="0"/>
 	<listentry label="512kB" value="1"/>
 	<listentry label="1MB" value="2"/>
+	<!--NOT tang_nano20k_ff tang_nano20k_020_ff -->
 	<listentry label="1.5MB" value="3"/>
+	<!--END-->
       </list>	
       <list label="Fastmem:" id="Q" default="0" action="reset">
 	<listentry label="None" value="0"/>
@@ -97,8 +99,11 @@
 	<!--IS mistle_gw3a_20 mistle_gw5a_25 -->
 	<listentry label="8MB" value="3"/>
     <!--END-->
-	<!--NOT mistle_gw3a_20 mistle_gw5a_25 -->
+	<!--NOT mistle_gw3a_20 mistle_gw5a_25 tang_nano20k_ff tang_nano20k_020_ff -->
 	<listentry label="5.5MB" value="3"/>
+	<!--END-->
+	<!--IS tang_nano20k_ff tang_nano20k_020_ff -->
+	<listentry label="5MB" value="3"/>
 	<!--END-->
       </list>	
       <list label="Turbo:" id="Z" default="3">
@@ -163,7 +168,7 @@
         <listentry label="Enabled" value="1"/>
     </list>
       <!--END-->
-      <!--IS tang_nano20k_020 tang_nano20k --> 
+      <!--IS tang_nano20k_020 tang_nano20k_020_ff tang_nano20k tang_nano20k_ff --> 
       <list label="Drive Sounds:" id="E" default="0">
 		<listentry label="Disabled" value="0"/>
 		<listentry label="Enabled" value="1"/>
@@ -175,6 +180,12 @@
 		<listentry label="Black" value="2"/>
 		<listentry label="Balanced" value="3"/>
      </list>
+     <!--IS tang_nano20k_ff tang_nano20k_020_ff -->
+     <list label="Flicker Fix:" id="G" default="1">
+	<listentry label="Disabled" value="0"/>
+	<listentry label="Enabled" value="1"/>
+     </list>
+     <!--END-->
      <list label="Filter:" id="F" default="0">
 		<listentry label="None" value="0"/>
 		<listentry label="Horizontal" value="1"/>
