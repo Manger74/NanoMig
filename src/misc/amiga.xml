@@ -76,7 +76,9 @@
 	<listentry label="None" value="0"/>
 	<listentry label="512kB" value="1"/>
 	<listentry label="1MB" value="2"/>
+	<!--NOT FLICKER_FIXER -->
 	<listentry label="1.5MB" value="3"/>
+	<!--END-->
       </list>	
       <list label="Fastmem:" id="Q" default="0" action="reset">
 	<listentry label="None" value="0"/>
@@ -84,6 +86,9 @@
 	<listentry label="4MB" value="2"/>
 	<!--IS FASTMEM_5_5MB -->
 	<listentry label="5.5MB" value="3"/>
+	<!--END-->
+	<!--IS FASTMEM_5MB -->
+	<listentry label="5MB" value="3"/>
 	<!--END-->
 	<!-- the gw3a_20 and gw5a_25 boards have 32 MB SDRAM and support 8MB -->
 	<!--IS FASTMEM_8MB -->
