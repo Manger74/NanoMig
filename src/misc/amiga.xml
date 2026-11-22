@@ -173,6 +173,12 @@
 	<listentry label="Black" value="2"/>
 	<listentry label="Balanced" value="3"/>
       </list>
+      <!--IS FLICKER_FIXER -->
+      <list label="Flicker Fix:" id="G" default="1">
+	<listentry label="Disabled" value="0"/>
+	<listentry label="Enabled" value="1"/>
+      </list>
+      <!--END-->
       <list label="Filter:" id="F" default="0">
 	<listentry label="None" value="0"/>
 	<listentry label="Horizontal" value="1"/>

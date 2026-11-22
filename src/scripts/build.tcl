@@ -321,6 +321,7 @@ if {$dev eq "nano20k"} {
     if {[lsearch -exact $options "ff"] >= 0} {
 	set options [lsearch -inline -all -not -exact $options "ff"]
 	puts "Building flicker fixer variant"
+	append board "_ff"
 	set defines [lsearch -inline -all -not -exact $defines "ENABLE_FASTMEM_5_5MB"]
 	lappend defines "ENABLE_FASTMEM_5MB" "ENABLE_FLICKER_FIXER"
     }
@@ -977,6 +978,9 @@ add_file_v minimig-aga/minimig_sram_bridge.v
 add_file_v minimig-aga/minimig_syscontrol.v
 add_file_v minimig-aga/userio.v
 add_file_v minimig/Amber.v
+if {[lsearch -exact $defines "ENABLE_FLICKER_FIXER"] >= 0} {
+    add_file_v minimig/flickerfix.v
+}
 
 if {[lsearch -exact $defines "ENABLE_AGA"] >= 0} {
     # used by AGA

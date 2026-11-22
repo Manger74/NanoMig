@@ -328,6 +328,16 @@ wire [1:0] osd_kickstart;       // 1=1.3, 2=3.1, 3=3.2
 `ifdef ENABLE_DRIVE_SOUNDS
 wire 	   osd_drive_sounds;   	// 0 = disabled, 1 = enabled
 `endif
+`ifdef ENABLE_FLICKER_FIXER
+wire       osd_flicker_fixer;   // 0 = disabled, 1 = enabled
+
+// flicker fixer field buffer jobs between Amber (28MHz) and sdram (85MHz)
+wire [6:0]  ff_len;
+wire        ff_rd_req, ff_rd_ack, ff_wr_req, ff_wr_ack, ff_rb_we;
+wire [16:0] ff_rd_addr, ff_wr_addr;
+wire [9:0]  ff_rd_idx, ff_wr_idx, ff_wb_addr, ff_rb_addr;
+wire [31:0] ff_wb_q, ff_rb_d;
+`endif
 `ifdef ENABLE_LCD
 wire [7:0] osd_lcd_v_pos;       // -20 .. 20 vertical offset for lcd adjustment
 `endif
@@ -766,6 +776,9 @@ sysctrl #(
 `ifdef ENABLE_DRIVE_SOUNDS
 	.system_drive_sounds(osd_drive_sounds),
 `endif
+`ifdef ENABLE_FLICKER_FIXER
+	.system_flicker_fixer(osd_flicker_fixer),
+`endif
         .int_out_n(spi_io_intn),
         .int_in( { 4'b0000, sdc_int, 1'b0, hid_int, 1'b0 }),
         .int_ack( int_ack ),
@@ -1035,6 +1048,16 @@ nanomig nanomig
  .fastram_din(fastram_din),
  .fastram_wr(fastram_wr),
  .fastram_ready(fastram_ready)
+`ifdef ENABLE_FLICKER_FIXER
+ ,
+ .ff_en(osd_flicker_fixer),
+ .clk_mem(clk_85m),
+ .ff_len(ff_len),
+ .ff_rd_req(ff_rd_req), .ff_rd_addr(ff_rd_addr), .ff_rd_idx(ff_rd_idx), .ff_rd_ack(ff_rd_ack),
+ .ff_wr_req(ff_wr_req), .ff_wr_addr(ff_wr_addr), .ff_wr_idx(ff_wr_idx), .ff_wr_ack(ff_wr_ack),
+ .ff_wb_addr(ff_wb_addr), .ff_wb_q(ff_wb_q),
+ .ff_rb_addr(ff_rb_addr), .ff_rb_d(ff_rb_d), .ff_rb_we(ff_rb_we)
+`endif
 );
 
 wire flash_ready;
@@ -1296,6 +1319,16 @@ sdram #(
 	.p2_cs         ( fastram_sel     ), // cpu/chipset requests read/wrie
 	.p2_we         ( fastram_wr      ),  // cpu/chipset requests write
 	.p2_ack        ( fastram_ready   )
+
+`ifdef ENABLE_FLICKER_FIXER
+	,
+	// flicker fixer field buffer at $700000 (32 bit sdram only)
+	.ff_len(ff_len),
+	.ff_rd_req(ff_rd_req), .ff_rd_addr(ff_rd_addr), .ff_rd_idx(ff_rd_idx), .ff_rd_ack(ff_rd_ack),
+	.ff_wr_req(ff_wr_req), .ff_wr_addr(ff_wr_addr), .ff_wr_idx(ff_wr_idx), .ff_wr_ack(ff_wr_ack),
+	.ff_wb_addr(ff_wb_addr), .ff_wb_q(ff_wb_q),
+	.ff_rb_addr(ff_rb_addr), .ff_rb_d(ff_rb_d), .ff_rb_we(ff_rb_we)
+`endif
 );
 
 // run the flash a 85MHz. This is only used at power-up to copy kickstart

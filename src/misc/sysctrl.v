@@ -66,6 +66,9 @@ module sysctrl #(
   output reg	    system_stereo_mix,
   output reg [1:0]  system_kickstart,
   output reg 		system_drive_sounds,
+`ifdef ENABLE_FLICKER_FIXER
+  output reg		system_flicker_fixer,
+`endif
   output reg [7:0]  system_lcd_v_pos
 );
 
@@ -164,6 +167,9 @@ always @(posedge clk) begin
 	  system_stereo_mix <= 1'b1;
       system_kickstart <= 2'b01;
 	  system_drive_sounds <= 1'b0;
+`ifdef ENABLE_FLICKER_FIXER
+      system_flicker_fixer <= 1'b1;
+`endif
    end
    else
    begin // if (reset)
@@ -299,6 +305,10 @@ always @(posedge clk) begin
 		   if(id == "K") system_kickstart <= data_in[1:0];
            // Value "E": Drive Sounds disabled(0) or enabled(1)
 		   if(id == "E") system_drive_sounds <= data_in[0];
+`ifdef ENABLE_FLICKER_FIXER
+           // Value "G": Flicker fixer disabled(0) or enabled(1)
+		   if(id == "G") system_flicker_fixer <= data_in[0];
+`endif
 		   // value "B": lcd vertical position (used in lcd variant, only)
 		   if(id == "B") system_lcd_v_pos <= data_in;
                 end

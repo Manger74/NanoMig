@@ -110,6 +110,27 @@ module nanomig (
    output [15:0] fastram_din,
    output	 fastram_wr,
    input	 fastram_ready
+
+`ifdef ENABLE_FLICKER_FIXER
+   ,
+   // flicker fixer field buffer, see minimig/flickerfix.v
+   input	 ff_en,
+   input	 clk_mem,	 // sdram clock
+   output [6:0]	 ff_len,
+   output	 ff_rd_req,
+   output [16:0] ff_rd_addr,
+   output [9:0]	 ff_rd_idx,
+   input	 ff_rd_ack,
+   output	 ff_wr_req,
+   output [16:0] ff_wr_addr,
+   output [9:0]	 ff_wr_idx,
+   input	 ff_wr_ack,
+   input [9:0]	 ff_wb_addr,
+   output [31:0] ff_wb_q,
+   input [9:0]	 ff_rb_addr,
+   input [31:0]	 ff_rb_d,
+   input	 ff_rb_we
+`endif
 ); 
 `ifndef GATEMATE
  `ifndef LATTICE
@@ -1651,6 +1672,14 @@ Amber AMBER
 	.blue_out(b),		        //blue component video out
 	._hsync_out(hs),		//horizontal synchronisation out
 	._vsync_out(vs)			//vertical synchronisation out
+`ifdef ENABLE_FLICKER_FIXER
+	,
+	.ff_en(ff_en), .ff_len(ff_len),
+	.ff_rd_req(ff_rd_req), .ff_rd_addr(ff_rd_addr), .ff_rd_idx(ff_rd_idx), .ff_rd_ack(ff_rd_ack),
+	.ff_wr_req(ff_wr_req), .ff_wr_addr(ff_wr_addr), .ff_wr_idx(ff_wr_idx), .ff_wr_ack(ff_wr_ack),
+	.clk_mem(clk_mem), .ff_wb_addr(ff_wb_addr), .ff_wb_q(ff_wb_q),
+	.ff_rb_addr(ff_rb_addr), .ff_rb_d(ff_rb_d), .ff_rb_we(ff_rb_we)
+`endif
  );
     
 endmodule
