@@ -9,7 +9,7 @@ if {$argc == 0} {
     puts "       device: nano20k, tp25k, gw5a_25, gw3a_20, mega138kpro, console60k, console138k"
     puts "       options:"
     puts "               nano20k: aga, lcd   - build aga+020 and/or rgblcd variant"
-    puts "                        ff         - flicker fixer (5MB FastRAM)"
+    puts "                        ff         - flicker fixer"
     puts "               tp25k:   aga        - build aga variant"
     puts "               gw5a_25: aga        - build aga variant"
     puts "               all:     nosyn      - generate files only, don't run synthesis"
@@ -316,8 +316,9 @@ if {$dev eq "nano20k"} {
 	lappend sdc tang/nano20k/nanomig_tg68k.sdc
     }
 	
-    # flicker fixer option: sdram $700000-$77FFFF becomes the field
-    # buffer, FastRAM is reduced to 5MB and SlowRAM to max 1MB
+    # flicker fixer option: while switched on (OSD, taken over at reset)
+    # sdram $700000-$77FFFF is the field buffer, FastRAM is reduced to 5MB
+    # and SlowRAM to max 1MB
     if {[lsearch -exact $options "ff"] >= 0} {
 	set options [lsearch -inline -all -not -exact $options "ff"]
 	puts "Building flicker fixer variant"

@@ -79,6 +79,10 @@
 	<!--NOT FLICKER_FIXER -->
 	<listentry label="1.5MB" value="3"/>
 	<!--END-->
+	<!-- 1MB while the flicker fixer is on -->
+	<!--IS FLICKER_FIXER -->
+	<listentry label="1.5/1MB" value="3"/>
+	<!--END-->
       </list>	
       <list label="Fastmem:" id="Q" default="0" action="reset">
 	<listentry label="None" value="0"/>
@@ -87,14 +91,22 @@
 	<!--IS FASTMEM_5_5MB -->
 	<listentry label="5.5MB" value="3"/>
 	<!--END-->
+	<!-- flicker fixer builds: 5MB while the flicker fixer is on -->
 	<!--IS FASTMEM_5MB -->
-	<listentry label="5MB" value="3"/>
+	<listentry label="5.5/5MB" value="3"/>
 	<!--END-->
 	<!-- the gw3a_20 and gw5a_25 boards have 32 MB SDRAM and support 8MB -->
 	<!--IS FASTMEM_8MB -->
 	<listentry label="8MB" value="3"/>
 	<!--END-->
       </list>	
+      <!-- takes the top 0.5MB of Fast/SlowRAM, so only changed by a reset -->
+      <!--IS FLICKER_FIXER -->
+      <list label="Flicker Fix:" id="G" default="1" action="reset">
+	<listentry label="Disabled" value="0"/>
+	<listentry label="Enabled" value="1"/>
+      </list>
+      <!--END-->
       <!--IS TURBO -->
       <list label="Turbo:" id="Z" default="3">
 	<listentry label="None" value="0"/>
@@ -173,12 +185,6 @@
 	<listentry label="Black" value="2"/>
 	<listentry label="Balanced" value="3"/>
       </list>
-      <!--IS FLICKER_FIXER -->
-      <list label="Flicker Fix:" id="G" default="1">
-	<listentry label="Disabled" value="0"/>
-	<listentry label="Enabled" value="1"/>
-      </list>
-      <!--END-->
       <list label="Filter:" id="F" default="0">
 	<listentry label="None" value="0"/>
 	<listentry label="Horizontal" value="1"/>
