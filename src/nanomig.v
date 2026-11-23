@@ -232,11 +232,14 @@ wire	    ovl;
    
 wire [1:0] cpucfg = cpu_config; // CPU-Type: 00 = 68000, 01 = 68010, 11 = 68020
 wire [1:0] chipram_config = memory_config[1:0];
+`ifdef ENABLE_FLICKER_FIXER
+wire ff_on;   // flicker fixer on/off as of the last reset, see cpu_wrapper
+`endif
 `ifndef ENABLE_RAM32
 // steal 1.5MiB SlowRAM when FastRAM is set to 2'b11
 `ifdef ENABLE_FLICKER_FIXER
 // SlowRAM 1.5MiB would reach into the flicker fixer buffer, limit to 1MiB
-wire [1:0] slowram_req    = { memory_config[3], memory_config[2] & ~memory_config[3] };
+wire [1:0] slowram_req    = { memory_config[3], memory_config[2] & ~(memory_config[3] & ff_on) };
 `else
 wire [1:0] slowram_req    = memory_config[3:2];
 `endif
@@ -338,6 +341,10 @@ cpu_wrapper cpu_wrapper
 	.cpucfg       (cpucfg          ),
 	.turbocfg     (turbocfg        ),
 	.fastramcfg   (fastram_config  ),
+`ifdef ENABLE_FLICKER_FIXER
+	.ff_en        (ff_en           ),
+	.ff_on        (ff_on           ),
+`endif
 	.chipramcfg   (chipram_config  ),
 	.slowramcfg   (slowram_config  ),
 	.bootrom      (1'b0            ),
@@ -1680,7 +1687,7 @@ Amber AMBER
 	._vsync_out(vs)			//vertical synchronisation out
 `ifdef ENABLE_FLICKER_FIXER
 	,
-	.ff_en(ff_en), .ff_len(ff_len),
+	.ff_en(ff_on), .ff_len(ff_len),
 	.ff_rd_req(ff_rd_req), .ff_rd_addr(ff_rd_addr), .ff_rd_idx(ff_rd_idx), .ff_rd_ack(ff_rd_ack),
 	.ff_wr_req(ff_wr_req), .ff_wr_addr(ff_wr_addr), .ff_wr_idx(ff_wr_idx), .ff_wr_ack(ff_wr_ack),
 	.clk_mem(clk_mem), .ff_wb_addr(ff_wb_addr), .ff_wb_q(ff_wb_q),

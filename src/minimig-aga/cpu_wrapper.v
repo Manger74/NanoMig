@@ -52,6 +52,10 @@ module cpu_wrapper
 
 	input [1:0]	  cpucfg,
 	input [2:0]	  fastramcfg,
+`ifdef ENABLE_FLICKER_FIXER
+	input		  ff_en,         // flicker fixer as set in the osd
+	output reg	  ff_on = 1'b0,  // ... as of the last reset
+`endif
 	input [1:0]	  chipramcfg,
 	input [1:0]	  slowramcfg,
 	input [2:0]	  turbocfg,
@@ -138,6 +142,9 @@ reg [1:0] slowramcfg_d;
 always @(posedge clk) begin
     if (~reset | ~reset_out) begin
         fastramcfg_d <= fastramcfg;
+`ifdef ENABLE_FLICKER_FIXER
+        ff_on        <= ff_en;
+`endif
         chipramcfg_d <= chipramcfg;
         slowramcfg_d <= slowramcfg;
     end
@@ -644,8 +651,10 @@ always @(posedge clk) begin
 				if (fastramcfg_d[1:0] == 2'b11) begin
 					case (autocfg_card)
 						2'b01: autocfg_card <= 2'b10;  // Extra 1MiB of RAM stolen from SlowRAM
-`ifndef ENABLE_FLICKER_FIXER
-						// sdram $700000-$77FFFF is the flicker fixer field buffer otherwise
+`ifdef ENABLE_FLICKER_FIXER
+						// sdram $700000-$77FFFF is the field buffer while the flicker fixer is on
+						2'b10: if (!ff_on) autocfg_card <= 2'b11;
+`else
 						2'b10: autocfg_card <= 2'b11;  // Extra 0.5MiB of RAM stolen from SlowRAM
 `endif
 						default: ;
