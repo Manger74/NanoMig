@@ -147,7 +147,9 @@ and qemu-m68k, exec and the card are mocked).
 ## Limits
 
 - Real hardware: `nptest PING` ran about 700 MB without a corrupted
-  frame. Crashes under heavy load with Roadshow are being investigated.
+  frame. Stable with Roadshow under full load (AmiSpeedTest) since
+  nanoport.device 1.1, which fixed the interrupt server (it relied on a6
+  holding SysBase, which exec doesn't guarantee for servers).
 - 68020 build only for now, the 68000 build (FX68K) has no fast path.
 - IPv4/ARP only, no IPv6.
 - Throughput is limited by WiFi and SPI (about 2 MB/s raw at 19.2 MHz,
