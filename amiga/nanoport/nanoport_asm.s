@@ -42,16 +42,19 @@ romtag:	dc.w	RTC_MATCHWORD
 init:	jmp	_np_rom_init
 
 name:		dc.b	"nanoport.device",0
-idstring:	dc.b	"nanoport 1.0 (20.11.2026) NanoMig network card",13,10,0
+idstring:	dc.b	"nanoport 1.1 (23.11.2026) NanoMig network card",13,10,0
 	even
 endtag:
 
 ; ---------------------------------------------------------------------------
-; PORTS (INT2) interrupt server, a1 = struct NPUnit, a6 = SysBase
+; PORTS (INT2) interrupt server, a1 = struct NPUnit
 ; The card keeps INT2 asserted while an enabled condition holds. The server
 ; masks the active sources and leaves the work to the unit task, which
 ; unmasks them again once everything has been processed.
-; Uses d0/d1/a0/a1 only, returns with Z set so the chain continues.
+; Servers get no valid a6 (any server before us in the chain may have
+; changed it), so SysBase is loaded from 4. a0 is set back to the custom
+; chips for servers after us that expect it. Uses d0/d1/a0/a1/a6, returns
+; with Z set so the chain continues.
 _np_irq_server:
 	move.l	u_hw(a1),a0
 	adda.l	#R_REGS,a0
@@ -70,8 +73,10 @@ _np_irq_server:
 	move.w	u_intena(a1),R_INTENA(a0)
 	move.l	u_irqmask(a1),d0
 	move.l	u_task(a1),a1
+	movea.l	4.w,a6
 	jsr	LVO_Signal(a6)
-.none:	moveq	#0,d0
+.none:	lea	$dff000,a0
+	moveq	#0,d0
 	rts
 
 ; ---------------------------------------------------------------------------

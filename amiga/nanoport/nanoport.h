@@ -14,8 +14,8 @@
 
 #define NP_NAME      "nanoport.device"
 #define NP_VERSION   1
-#define NP_REVISION  0
-#define NP_IDSTRING  "nanoport 1.0 (20.11.2026) NanoMig network card"
+#define NP_REVISION  1
+#define NP_IDSTRING  "nanoport 1.1 (23.11.2026) NanoMig network card"
 
 /* autoconfig ids of the card */
 #define NP_MANUFACTURER 2011    /* $07DB, reserved for hackers */
