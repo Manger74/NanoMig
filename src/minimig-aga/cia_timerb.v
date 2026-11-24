@@ -22,13 +22,22 @@ reg    forceload;        // force load strobe
 wire  oneshot;        // oneshot mode
 wire  start;          // timer start (enable)
 reg    thi_load;         // load tmr after writing thi in one-shot mode
+reg    thi_load_latched;
 wire  reload;          // reload timer counter
 wire  zero;          // timer counter is zero
 wire  underflow;        // timer is going to underflow
 wire  count;          // count enable signal
 
 // Timer B count signal source
-assign count = tmcr[6] ? tmra_ovf : eclk;
+reg    [1:0] start_delay;   // 8520: counting starts two E clocks after START
+always @(posedge clk)
+  if (clk7_en) begin
+    if (reset || !start || (thi_load && oneshot) || (tcr && wr && !data_in[0]))
+      start_delay <= 2'b00;
+    else if (eclk)
+      start_delay <= {start_delay[0],1'b1};
+  end
+assign count = tmcr[6] ? tmra_ovf : (eclk & start_delay[1]);
 
 // writing timer control register
 always @(posedge clk)
@@ -71,11 +80,15 @@ always @(posedge clk)
 // thi is written in one-shot mode so tmr must be reloaded
 always @(posedge clk)
   if (clk7_en) begin
+    if (eclk)
+      thi_load_latched <= 1'b0;
+    if (thi & wr & (~start | oneshot))
+      thi_load_latched <= 1'b1;
     thi_load <= thi & wr & (~start | oneshot);
   end
 
 // timer counter reload signal
-assign reload = thi_load | forceload | underflow;
+assign reload = (thi_load_latched & eclk) | forceload | underflow;
 
 // timer counter
 always @(posedge clk)

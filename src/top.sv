@@ -828,29 +828,34 @@ wire [14:0] audio_right;
 
 // Map Joysticks 
 
+// USB/HID joysticks only: no opposite directions at the same time (right over
+// left, down over up, as WinUAE). DB9 lines stay raw so an Amiga mouse keeps working.
+wire [7:0] hid_joy0_f = {hid_joy0[7:4], hid_joy0[3] & ~hid_joy0[2], hid_joy0[2], hid_joy0[1] & ~hid_joy0[0], hid_joy0[0]};
+wire [7:0] hid_joy1_f = {hid_joy1[7:4], hid_joy1[3] & ~hid_joy1[2], hid_joy1[2], hid_joy1[1] & ~hid_joy1[0], hid_joy1[0]};
+
             // map first HID/USB joystick into first amiga joystick port
             // wire in db9 joystick & mouse
 wire [7:0] physical_port_1 = { 
-               hid_joy0[7], 
-               hid_joy0[6], 
-              (hid_joy0[5] | db9_joy0[5]), 
-              (hid_joy0[4] | db9_joy0[4]),
-              (hid_joy0[3] | db9_joy0[3]), 
-              (hid_joy0[2] | db9_joy0[2]),
-              (hid_joy0[1] | db9_joy0[1]),
-              (hid_joy0[0] | db9_joy0[0]) };   
+               hid_joy0_f[7], 
+               hid_joy0_f[6], 
+              (hid_joy0_f[5] | db9_joy0[5]), 
+              (hid_joy0_f[4] | db9_joy0[4]),
+              (hid_joy0_f[3] | db9_joy0[3]), 
+              (hid_joy0_f[2] | db9_joy0[2]),
+              (hid_joy0_f[1] | db9_joy0[1]),
+              (hid_joy0_f[0] | db9_joy0[0]) };   
 
             // map second HID/USB joystick into second amiga joystick port
             // wire in db9 joystick
 wire [7:0] physical_port_2 = { 
-               hid_joy1[7], 
-               hid_joy1[6], 
-			  (hid_joy1[5] | db9_joy1[5]),
-              (hid_joy1[4] | db9_joy1[4]),
-              (hid_joy1[3] | db9_joy1[3]), 
-              (hid_joy1[2] | db9_joy1[2]),
-              (hid_joy1[1] | db9_joy1[1]),
-              (hid_joy1[0] | db9_joy1[0]) }; 
+               hid_joy1_f[7], 
+               hid_joy1_f[6], 
+			  (hid_joy1_f[5] | db9_joy1[5]),
+              (hid_joy1_f[4] | db9_joy1[4]),
+              (hid_joy1_f[3] | db9_joy1[3]), 
+              (hid_joy1_f[2] | db9_joy1[2]),
+              (hid_joy1_f[1] | db9_joy1[1]),
+              (hid_joy1_f[0] | db9_joy1[0]) }; 
               
 wire [7:0] joystick0;
 wire [7:0] joystick1;

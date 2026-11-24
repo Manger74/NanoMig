@@ -26,6 +26,8 @@ module cia_timerd
   reg    [23:0] alarm;      // alarm
   reg    [23:0] tod_latch;    // timer d latch
   reg    count_del;        // delayed count signal for interrupt requesting
+  reg    count_del2;       // second delayed count signal (late carry)
+  reg    todcarry;         // carry from low 12 bits into high 12 bits
 
 // timer D output latch control
 always @(posedge clk)
@@ -86,7 +88,7 @@ always @(posedge clk)
     begin
       tod[23:0] <= 24'd0;
     end
-    else if (wr && !crb7) // crb7==0 enables writing to TOD counter
+    else if (wr && !crb7 && (tlo || tme || thi)) // crb7==0 enables writing to TOD counter
     begin
       if (tlo)
         tod[7:0] <= data_in[7:0];
@@ -95,8 +97,12 @@ always @(posedge clk)
       if (thi)
         tod[23:16] <= data_in[7:0];
     end
-    else if (count_ena && count)
-      tod[23:0] <= tod[23:0] + 24'd1;
+    else if (count_ena && count) begin
+      todcarry <= &tod[11:0];
+      tod[11:0] <= tod[11:0] + 12'd1;
+    end
+    else if (count_ena && count_del) // 8520 bug: upper 12 bits carry one cycle late
+      tod[23:12] <= tod[23:12] + todcarry;
   end
 
 // alarm write
@@ -132,10 +138,11 @@ always @(posedge clk)
 always @(posedge clk)
   if (clk7_en) begin
     count_del <= count & count_ena;
+    count_del2 <= count_del & count_ena;
   end
 
 // alarm interrupt request
-assign irq = (tod[23:0]==alarm[23:0] && count_del) ? 1'b1 : 1'b0;
+assign irq = (tod[23:0]==alarm[23:0] && (count_del || count_del2)) ? 1'b1 : 1'b0;
 
 
 endmodule
