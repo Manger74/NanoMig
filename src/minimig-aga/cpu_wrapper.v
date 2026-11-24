@@ -401,18 +401,25 @@ assign cpu_clkena = (~cpu_req & tg68_armed) | chipready | ramready
 `endif
 
 `ifdef ENABLE_TG68K
+`ifdef ENABLE_020_ONLY
+// fixed 68020 (cpucfg is hard wired to 2'b11): the kernel treats 2 (switchable)
+// with CPU="11" exactly like 1, so fixing all options to 1 removes the switching logic
+`define TG68K_CFG 1
+`else
+`define TG68K_CFG 2
+`endif
 TG68KdotC_Kernel
 `ifndef VERILATOR
 // verilator runs the verilog translated variant which doesn't support configuration but
 // is hard coded for full configurability (all configs set to 2)
 #(
-	.SR_Read(2),        // 0=>user,   1=>privileged,    2=>switchable with CPU(0)
-	.VBR_Stackframe(2), // 0=>no,     1=>yes/extended,  2=>switchable with CPU(0)
-	.extAddr_Mode(2),   // 0=>no,     1=>yes,           2=>switchable with CPU(1)
-	.MUL_Mode(2),       // 0=>16Bit,  1=>32Bit,         2=>switchable with CPU(1),  3=>no MUL,
-	.DIV_Mode(2),       // 0=>16Bit,  1=>32Bit,         2=>switchable with CPU(1),  3=>no DIV,
-	.BitField(2),       // 0=>no,     1=>yes,           2=>switchable with CPU(1)
-	.MUL_Hardware(1)    // 0=>no,  	  1=>yes,
+	.SR_Read(`TG68K_CFG),        // 0=>user,   1=>privileged,    2=>switchable with CPU(0)
+	.VBR_Stackframe(`TG68K_CFG), // 0=>no,     1=>yes/extended,  2=>switchable with CPU(0)
+	.extAddr_Mode(`TG68K_CFG),   // 0=>no,     1=>yes,           2=>switchable with CPU(1)
+	.MUL_Mode(`TG68K_CFG),       // 0=>16Bit,  1=>32Bit,         2=>switchable with CPU(1),  3=>no MUL,
+	.DIV_Mode(`TG68K_CFG),       // 0=>16Bit,  1=>32Bit,         2=>switchable with CPU(1),  3=>no DIV,
+	.BitField(`TG68K_CFG),       // 0=>no,     1=>yes,           2=>switchable with CPU(1)
+	.MUL_Hardware(1)             // 0=>no,     1=>yes,
 )
 `endif
 cpu_inst_p
