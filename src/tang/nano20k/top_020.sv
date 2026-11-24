@@ -1075,15 +1075,26 @@ flash flash (
 // latch audio, so it's stable during 48khz transfer
 reg [15:0] audio_reg [2]; // 16 bit signed audio for HDMI
 
-// Sign-extend inputs to 16-bit BEFORE mixing  intermediate sum
-// cannot overflow, result always fits back in 15 bit.
-wire signed [15:0] audio_left_s  = {{1{audio_left[14]}},  audio_left};
-wire signed [15:0] audio_right_s = {{1{audio_right[14]}}, audio_right};
+// Chipset audio captured into the pixel clock domain, sign extended to 16 bit,
+// so the stereo mix cannot overflow. Mix and volume are combinational from here
+// on and only the HDMI audio register follows (one register stage less).
+reg signed [15:0] cap_audio_left;
+reg signed [15:0] cap_audio_right;
 
-reg signed [14:0] mixed_audio_left;
-reg signed [14:0] mixed_audio_right;
-reg signed [14:0] scaled_audio_left;
-reg signed [14:0] scaled_audio_right;
+// --- Stereo Mix (75/25) ---------------------------------------------
+// l' = l - l/4 + r/4 = l + d and r' = r - r/4 + l/4 = r - d with d = r/4 - l/4.
+// Bit exact to the separate formulas (all 16 bit modulo arithmetic), but the
+// shared difference saves one adder per channel and the off-mux.
+wire signed [15:0] mix_d = osd_stereo_mix ? (cap_audio_right >>> 2) - (cap_audio_left >>> 2) : 16'sd0;
+wire signed [14:0] mixed_audio_left  = cap_audio_left  + mix_d;  // always fits in 15 bit
+wire signed [14:0] mixed_audio_right = cap_audio_right - mix_d;
+
+// --- Volume scaling: 0=Mute, 1=25%, 2=50%, 3=75%, 4=100% -------------
+// 25% and 50% are gated shifts, 75% is their sum (values 5..7 give 100%)
+wire signed [14:0] scaled_audio_left  = osd_volume[2] ? mixed_audio_left :
+            (osd_volume[1] ? mixed_audio_left  >>> 1 : 15'sd0) + (osd_volume[0] ? mixed_audio_left  >>> 2 : 15'sd0);
+wire signed [14:0] scaled_audio_right = osd_volume[2] ? mixed_audio_right :
+            (osd_volume[1] ? mixed_audio_right >>> 1 : 15'sd0) + (osd_volume[0] ? mixed_audio_right >>> 2 : 15'sd0);
 
 // generate 48khz audio clock
 // An integer divider cannot hit 48kHz: 28500000 / 48000 / 2 = 296.88, and the
@@ -1109,58 +1120,12 @@ always @(posedge clk_pixel) begin
     // is audible as noisy samples. Updating one cycle later leaves the word
     // stable for a full audio half period before it is sampled.
     if(aclk_tick) begin
-        // --- Stereo Mix (75/25)-------------------------------------------
-        // 16-bit signed wires prevent any overflow; the result
-        // always fits in 15 bit and is truncated safely on assignment. 
-        case (osd_stereo_mix)
-            1'b0: begin   // no mix
-                mixed_audio_left  <= audio_left;
-                mixed_audio_right <= audio_right;
-            end
-            default: begin  // 75 / 25 blend
-                mixed_audio_left  <= (audio_left_s  - (audio_left_s  >>> 2))
-                                   + (audio_right_s >>> 2);
-                mixed_audio_right <= (audio_right_s - (audio_right_s >>> 2))
-                                   + (audio_left_s  >>> 2);
-            end
-        endcase
+        cap_audio_left  <= {audio_left[14],  audio_left};
+        cap_audio_right <= {audio_right[14], audio_right};
 
-        // --- Volume scaling ----------------------------------------
-        // mixed_audio_* are reg signed [14:0], so >>> is always
-        // arithmetic â€“ no $signed() wrapper required.
-        case (osd_volume) 
-            3'b100: begin // 100%
-                scaled_audio_left  <= mixed_audio_left;
-                scaled_audio_right <= mixed_audio_right;
-            end
-            3'b011: begin // 75%
-                scaled_audio_left  <= (mixed_audio_left  >>> 1) + (mixed_audio_left  >>> 2);
-                scaled_audio_right <= (mixed_audio_right >>> 1) + (mixed_audio_right >>> 2);
-            end
-            3'b010: begin // 50%
-                scaled_audio_left  <= mixed_audio_left  >>> 1;
-                scaled_audio_right <= mixed_audio_right >>> 1;
-            end
-            3'b001: begin // 25%
-                scaled_audio_left  <= mixed_audio_left  >>> 2;
-                scaled_audio_right <= mixed_audio_right >>> 2;
-            end
-            3'b000: begin // Mute
-                scaled_audio_left  <= 15'd0;
-                scaled_audio_right <= 15'd0;
-            end
-            default: begin // fallback 50 %
-                scaled_audio_left  <= mixed_audio_left  >>> 1;
-                scaled_audio_right <= mixed_audio_right >>> 1;
-            end
-        endcase
-
-        // --- HDMI audio register ----------------------------------
-        // Convert signed two's complement â†’ offset binary:
-        // flip sign bit (bit 14).  Bit 15 = 0 (15-bit audio in 16-bit slot).
-        // Explicit per-element assignment avoids unpacked-array ambiguity.
-        audio_reg[0] <= {scaled_audio_left[14],  scaled_audio_left[14:0]};
-        audio_reg[1] <= {scaled_audio_right[14], scaled_audio_right[14:0]};	
+        // HDMI audio register: 15 bit signed, sign extended to 16 bit
+        audio_reg[0] <= {scaled_audio_left[14],  scaled_audio_left};
+        audio_reg[1] <= {scaled_audio_right[14], scaled_audio_right};
     end
 end
    
