@@ -25,6 +25,36 @@
 // `define PLIP_LITE   // PLIP without statistics and loopback test, saves logic (needed for the 020 build)
 `define HQ_DRIVE_SOUNDS // drive sounds: with = tone bursts (drive_sounds_hq), without = single click (drive_sounds_min, fewer LEs)
 
+// optional OSD features, comment out to save logic (the OSD entry is removed as well)
+`define ENABLE_FILTER    // horizontal/vertical interpolation filter (vertical filter uses one BSRAM)
+`define ENABLE_SCANLINES // scanline effects
+`define ENABLE_SCREEN    // HDMI screen mode selection (standard/overscan/wide), fixed to standard if disabled
+// floppy drives: DF0 is always present, DF1-DF3 can be enabled individually
+`define ENABLE_DF1
+`define ENABLE_DF2
+`define ENABLE_DF3
+
+// the shared modules (and update_xml.tcl) use the inverted DISABLE_* names, so other
+// boards keep all features without any change
+`ifndef ENABLE_FILTER
+  `define DISABLE_FILTER
+`endif
+`ifndef ENABLE_SCANLINES
+  `define DISABLE_SCANLINES
+`endif
+`ifndef ENABLE_SCREEN
+  `define DISABLE_SCREEN
+`endif
+`ifndef ENABLE_DF1
+  `define DISABLE_DF1
+`endif
+`ifndef ENABLE_DF2
+  `define DISABLE_DF2
+`endif
+`ifndef ENABLE_DF3
+  `define DISABLE_DF3
+`endif
+
 module top(
   input			clk,
 
@@ -1139,13 +1169,19 @@ wire tmds_clock;
 
 wire vreset, vpal, interlace, short_frame;
 
+`ifdef DISABLE_SCREEN
+wire [1:0] video_screen = 2'd0;  // fixed to standard
+`else
+wire [1:0] video_screen = osd_video_screen;
+`endif
+
 video_analyzer video_analyzer (
     .clk         ( clk_28m   ),
     .hs          ( hs_n      ),
     .vs          ( vs_n      ),
     .pal         ( vpal      ),
     .short_frame ( short_frame ),
-    .screen      ( osd_video_screen ),
+    .screen      ( video_screen ),
     .interlace   ( interlace ),
     .vreset      ( vreset    )
 );
@@ -1165,7 +1201,7 @@ hdmi #(
 
   .pal_mode(vpal),
   .short_frame ( short_frame ),
-  .screen ( osd_video_screen ),
+  .screen ( video_screen ),
   .interlace(interlace),
   .reset(vreset),    // signal to synchronize HDMI
 

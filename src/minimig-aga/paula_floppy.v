@@ -124,6 +124,17 @@ parameter DSKSYNC = 9'h07e;
 parameter DSKLEN  = 9'h024;
 
 //local signals
+// drives removed at build time (DISABLE_DF1..3) are never selected, so all their state
+// becomes constant. DF0 is always present.
+localparam [3:0] DRIVE_ENA = {
+`ifdef DISABLE_DF3 1'b0 `else 1'b1 `endif ,
+`ifdef DISABLE_DF2 1'b0 `else 1'b1 `endif ,
+`ifdef DISABLE_DF1 1'b0 `else 1'b1 `endif ,
+1'b1 };
+wire [3:0] _selm = _sel | ~DRIVE_ENA;
+// a dma on a removed drive must not wait forever for the sd card (it would block DF0, too)
+wire no_drive = (DRIVE_ENA != 4'b1111) && (&_selm);
+
 reg  [15:0] dsksync;			//disk sync register
 reg  [15:0] dsklen;			//disk dma length, direction and enable 
 reg   [6:0] dsktrack[3:0];	//track select
@@ -263,7 +274,7 @@ always @(posedge clk) begin
       case(fd_dma_buf_wr_state)
 	4'd0: begin
 	   // DMA read detected, read data from SD card into buffer
-	   if(dma_active && !sdc_busy && !lenzero && !dsklen[14]) begin	     
+	   if(dma_active && !sdc_busy && !lenzero && !dsklen[14] && !no_drive) begin	     
 	      $display("paula_floppy.v: DMA read, lenzero = %0d, dsklen = %0d/%0d/%0d", 
 		       lenzero, dsklen[15], dsklen[14], dsklen[13:0]);
 	      
@@ -282,7 +293,7 @@ always @(posedge clk) begin
 	      fd_dma_wr_sec <= fd_dma_wr_sec_next;
 	      sdc_sector <= track * 11 + fd_dma_wr_sec_next;
 	      
-	      sdc_rd <= ~_sel;                    // request data sector for selected drive
+	      sdc_rd <= ~_selm;                    // request data sector for selected drive
 	      
 	      fd_dma_buf_wr_state <= 4'd1;
 	   end // if (dma_active && !sdc_busy && !lenzero && !dsklen[14])	
@@ -360,7 +371,7 @@ always @(posedge clk) begin
 		 fd_dma_wr_sec <= fd_dma_wr_sec_next;
 		 sdc_sector <= track * 11 + fd_dma_wr_sec_next;
 	      
-		 sdc_rd <= ~_sel;
+		 sdc_rd <= ~_selm;
 
 		 fd_dma_buf_wr_state <= 4'd1;	      
 	      end
@@ -407,8 +418,12 @@ always @(posedge clk) begin
 	   // wait for sd card to become available for writing. It may be busy from a
 	   // previous sector to be written
 	   if(!sdc_busy) begin
-	      sdc_wr <= ~_sel;
-	      fd_dma_buf_wr_state <= 4'd8;
+	      if(no_drive)
+		fd_dma_buf_wr_state <= 4'd0;  // removed drive, drop the data
+	      else begin
+		 sdc_wr <= ~_selm;
+		 fd_dma_buf_wr_state <= 4'd8;
+	      end
 	   end
 	end
 	   
@@ -573,7 +588,7 @@ always @(posedge clk) begin
 end
     
 // disk index pulses output
-assign index = |(~_sel & motor_on) & ~|rpm_pulse_cnt & sof;
+assign index = |(~_selm & motor_on) & ~|rpm_pulse_cnt & sof;
 	
 //--------------------------------------------------------------------------------------
 //data out multiplexer
@@ -582,7 +597,7 @@ assign data_out = dskbytr | dskdatr;
 //--------------------------------------------------------------------------------------
 
 //active whenever any drive is selected
-assign _selx = &_sel[3:0];
+assign _selx = &_selm[3:0];
 
 // delayed step signal for detection of its rising edge 
 always @(posedge clk) begin
@@ -607,17 +622,17 @@ assign step_ena = step_ena_cnt[8];
 // reset when the disk is present and step pulse is received for selected drive
 always @(posedge clk) begin
   if (clk7_en) begin
-    _disk_change <= (_disk_change | ~_sel & {4{_step}} & ~{4{_step_del}} & disk_present) & ~({4{reset}} | ~disk_present);
+    _disk_change <= (_disk_change | ~_selm & {4{_step}} & ~{4{_step_del}} & disk_present) & ~({4{reset}} | ~disk_present);
   end
 end
  
 //active drive number (priority encoder)
-assign sel = !_sel[0] ? 2'd0 : !_sel[1] ? 2'd1 : !_sel[2] ? 2'd2 : !_sel[3] ? 2'd3 : 2'd0;
+assign sel = !_selm[0] ? 2'd0 : !_selm[1] ? 2'd1 : !_selm[2] ? 2'd2 : !_selm[3] ? 2'd3 : 2'd0;
 
 //delayed drive select signals
 always @(posedge clk) begin
   if (clk7_en) begin
-    _sel_del <= _sel;
+    _sel_del <= _selm;
   end
 end
 
@@ -626,42 +641,42 @@ always @(posedge clk) begin
   if (clk7_en) begin
     if (reset)
       motor_on[0] <= 0;
-    else if (!_sel[0] && _sel_del[0])
+    else if (!_selm[0] && _sel_del[0])
       motor_on[0] <= ~_motor;
   end
 end
 
 always @(posedge clk) begin
   if (clk7_en) begin
-    if (reset)
+    if (reset || !DRIVE_ENA[1])
       motor_on[1] <= 0;
-    else if (!_sel[1] && _sel_del[1])
+    else if (!_selm[1] && _sel_del[1])
       motor_on[1] <= ~_motor;
   end
 end
 
 always @(posedge clk) begin
   if (clk7_en) begin
-    if (reset)
+    if (reset || !DRIVE_ENA[2])
       motor_on[2] <= 0;
-    else if (!_sel[2] && _sel_del[2])
+    else if (!_selm[2] && _sel_del[2])
       motor_on[2] <= ~_motor;
   end
 end
 
 always @(posedge clk) begin
   if (clk7_en) begin
-    if (reset)
+    if (reset || !DRIVE_ENA[3])
       motor_on[3] <= 0;
-    else if (!_sel[3] && _sel_del[3])
+    else if (!_selm[3] && _sel_del[3])
       motor_on[3] <= ~_motor;
   end
 end
 
 //_ready,_track0 and _change signals
-assign _change = &(_sel | _disk_change);
+assign _change = &(_selm | _disk_change);
 
-assign _wprot = &(_sel | disk_writable);
+assign _wprot = &(_selm | disk_writable);
 
 assign  _track0 =&(_selx | _dsktrack0);
 
@@ -688,10 +703,11 @@ assign dsktracklast = dsktrack[sel]==82;
 // drive _ready signal control
 // Amiga DD drive activates _ready whenever _sel is active and motor is off
 // or whenever _sel is active, motor is on and there is a disk inserted (not implemented - _ready is active when _sel is active)
-assign _ready   = (_sel[3] | ~(drives[1] & drives[0])) 
-        & (_sel[2] | ~drives[1]) 
-        & (_sel[1] | ~(drives[1] | drives[0])) 
-        & (_sel[0]);
+// with all drives built in, the number of drives is selected at runtime (OSD), else
+// exactly the built-in drives are present
+wire [3:0] drives_present = (DRIVE_ENA == 4'b1111) ?
+	{ drives[1] & drives[0], drives[1], drives[1] | drives[0], 1'b1 } : DRIVE_ENA;
+assign _ready   = &(_selm | ~drives_present);
 
 //--------------------------------------------------------------------------------------
 
@@ -914,7 +930,7 @@ assign fifo_rd = (busrd & dmaon) | stbdat;
 wire sync_match;
 assign sync_match = dsksync[15:0]==floppy_data && fifo_reading_sector && trackrd;
 
-assign syncint = sync_match | ~dmaen & |(~_sel & motor_on & disk_present) & sof;
+assign syncint = sync_match | ~dmaen & |(~_selm & motor_on & disk_present) & sof;
 
 //track read enable / wait for syncword logic
 always @(posedge clk) begin
@@ -962,7 +978,7 @@ always @(posedge clk) begin
    // mounting can happen during reset as well 
    for(i = 0; i < 4; i = i + 1)
      if (sdc_image_mounted[i])
-	disk_present[i] <= |sdc_image_size;
+	disk_present[i] <= |sdc_image_size && DRIVE_ENA[i];
 end
 
 // for now, either all or none of the floppy drives is write protected  

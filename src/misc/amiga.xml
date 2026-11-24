@@ -124,12 +124,15 @@
       <!--END-->
     </menu>
     <menu label="Storage">
+      <!-- the number of drives is only selectable if all of them are built in -->
+      <!--NOT DISABLE_DF1 DISABLE_DF2 DISABLE_DF3 -->
       <list label="Drives:" id="D" default="0">
 	<listentry label="1" value="0"/>
 	<listentry label="2" value="1"/>
 	<listentry label="3" value="2"/>
 	<listentry label="4" value="3"/>
       </list>
+      <!--END-->
       <list label="Speed:" id="S" default="1">
 	<listentry label="Normal" value="0"/>
 	<listentry label="Fast" value="1"/>
@@ -139,9 +142,15 @@
 	<listentry label="Protected" value="1"/>
       </list>
       <fileselector label="Floppy DF0:" ext="adf" index="0" default="df0.adf"/>
+      <!--NOT DISABLE_DF1 -->
       <fileselector label="Floppy DF1:" ext="adf" index="1" default="df1.adf"/>
+      <!--END-->
+      <!--NOT DISABLE_DF2 -->
       <fileselector label="Floppy DF2:" ext="adf" index="2" default="df2.adf"/>
+      <!--END-->
+      <!--NOT DISABLE_DF3 -->
       <fileselector label="Floppy DF3:" ext="adf" index="3" default="df3.adf"/>
+      <!--END-->
       <list label="IDE" id="I" default="1" action="reset">
 	<listentry label="Disabled" value="0"/>
 	<listentry label="Enabled" value="1"/>
@@ -169,20 +178,24 @@
 		<listentry label="Enabled" value="1"/>
 	    </list>
       <!--END-->
+    <!--NOT DISABLE_SCANLINES -->
     <list label="Scanlines:" id="L" default="0">
 		<listentry label="None" value="0"/>
 		<listentry label="Dim" value="1"/>
 		<listentry label="Black" value="2"/>
 		<listentry label="Balanced" value="3"/>
      </list>
+    <!--END-->
+    <!--NOT DISABLE_FILTER -->
      <list label="Filter:" id="F" default="0">
 		<listentry label="None" value="0"/>
 		<listentry label="Horizontal" value="1"/>
 		<listentry label="Vertical" value="2"/>
 		<listentry label="Hor+Ver" value="3"/>
       </list>
+      <!--END-->
       <!-- the lcd variants have no HDMI and thus no use for overscan control -->
-      <!--NOT tang_nano20k_lcd -->
+      <!--NOT tang_nano20k_lcd DISABLE_SCREEN -->
       <list label="Screen:" id="W" default="0">
 	<listentry label="Standard" value="0"/>
 	<listentry label="Overscan" value="1"/>

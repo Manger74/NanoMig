@@ -76,12 +76,38 @@ puts [ format "Read %d bytes from $filename_xml" [ string length $data_xml ] ]
 
 # ===== the data loaded into memory can now be processed =====
 
-# mark parts to be kept or removed based in the board name ...
-regsub -all -line "<!--IS.*? $board .*?-->" $data_xml "<!--KEEP-->" data_xml
-regsub -all -line "<!--IS.*? $board-->" $data_xml "<!--KEEP-->" data_xml
+# tags used by IS/NOT: the board name plus (optionally) the macros defined in
+# xml_define_file, e.g. the toplevel. `ifdef/`ifndef/`else/`endif are evaluated.
+set xml_tags [list $board]
+if {[info exists xml_define_file]} {
+    set active [list 1]
+    foreach line [split [readFile $xml_define_file] "\n"] {
+        regsub {//.*} $line "" line
+        set on [lindex $active end]
+        if {[regexp {^\s*`ifdef\s+(\w+)} $line -> m]} {
+            lappend active [expr {$on && [lsearch -exact $xml_tags $m] >= 0}]
+        } elseif {[regexp {^\s*`ifndef\s+(\w+)} $line -> m]} {
+            lappend active [expr {$on && [lsearch -exact $xml_tags $m] < 0}]
+        } elseif {[regexp {^\s*`else} $line]} {
+            set up [lindex $active end-1]
+            lset active end [expr {$up && !$on}]
+        } elseif {[regexp {^\s*`endif} $line]} {
+            set active [lrange $active 0 end-1]
+        } elseif {$on && [regexp {^\s*`define\s+(\w+)} $line -> m]} {
+            lappend xml_tags $m
+        }
+    }
+    puts "XML tags: $xml_tags"
+}
+
+# mark parts to be kept or removed based on the tags ...
+foreach ena $xml_tags {
+    regsub -all -line "<!--IS.*? $ena .*?-->" $data_xml "<!--KEEP-->" data_xml
+    regsub -all -line "<!--IS.*? $ena-->" $data_xml "<!--KEEP-->" data_xml
+    regsub -all -line "<!--NOT.*? $ena .*?-->" $data_xml "<!--REMOVE-->" data_xml
+    regsub -all -line "<!--NOT.*? $ena-->" $data_xml "<!--REMOVE-->" data_xml
+}
 regsub -all -line {<!--IS.*?-->} $data_xml "<!--REMOVE-->" data_xml
-regsub -all -line "<!--NOT.*? $board .*?-->" $data_xml "<!--REMOVE-->" data_xml
-regsub -all -line "<!--NOT.*? $board-->" $data_xml "<!--REMOVE-->" data_xml
 regsub -all -line "<!--NOT.*?-->" $data_xml "<!--KEEP-->" data_xml
 
 # ... and actually remove or keep those parts

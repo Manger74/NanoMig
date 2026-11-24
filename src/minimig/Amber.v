@@ -39,8 +39,7 @@
 // 2009-05-24	- clean-up & renaming
 // 2009-08-31	- scanlines synthesis option
 // 2010-05-30	- htotal changed
-
-`define SCANLINES
+// DISABLE_FILTER / DISABLE_SCANLINES remove the interpolation filters / scanline effects
 
 module Amber
 (	
@@ -81,8 +80,13 @@ reg	_hsync_in_del;				//delayed horizontal synchronisation input
 reg	hss;					//horizontal sync start
 wire	eol;					//end of scan-doubled line
 
+`ifdef DISABLE_FILTER
+wire	hfilter = 1'b0;
+wire	vfilter = 1'b0;
+`else
 reg	hfilter;				//horizontal interpolation enable
 reg	vfilter;				//vertical interpolation enable
+`endif
 	
 reg	scanline_ena;				//signal active when the scan-doubled line is displayed
 
@@ -136,6 +140,7 @@ always @(posedge clk28m)
 	else if (eol)
 		scanline_ena <= 1;
 		
+`ifndef DISABLE_FILTER
 //horizontal interpolation enable	
 always @(posedge clk28m)
 	if (hss)
@@ -145,6 +150,7 @@ always @(posedge clk28m)
 always @(posedge clk28m)
 	if (hss)
 		vfilter <= hires ? hr_filter[1] : lr_filter[1];		//vertical interpolation enable
+`endif
 
 reg [15:0] lbf [1023:0]/*synthesis syn_ramstyle = "block_ram"*/;	// line buffer for scan doubling (there are 908/910 hires pixels in every line)
 reg [15:0] lbfo;			// line buffer output register
@@ -157,6 +163,7 @@ always @(posedge clk28m) begin
    lbfo <= lbf[rd_ptr[9:0]];
 end
    
+`ifndef DISABLE_FILTER
 reg [15:0] lbfd [1023:0]; // delayed line buffer for vertical interpolation
 
 //delayed line buffer read/write
@@ -171,6 +178,7 @@ always @(posedge clk28m) begin
    lbfdoD <= lbfd[rd_ptr[9:0]];
    lbfdo <= lbfdoD;   
 end
+`endif
    
 //delayed line buffer pixel by one clock cycle
 always @(posedge clk28m)
@@ -182,6 +190,7 @@ begin
 		_hsync_out <= dblscan ? lbfo2[15] : _csync_in;
 		_vsync_out <= dblscan ? _vsync_in : 1'b1;
 
+`ifndef DISABLE_FILTER
 		if (vfilter)
 		begin //vertical interpolation
 			t_red    <= ( lbfo2[14:10] + lbfdo[14:10] ) / 4;
@@ -189,6 +198,7 @@ begin
 			t_blue   <= ( lbfo2[4:0] + lbfdo[4:0] ) / 4;
 		end
 		else
+`endif
 		begin //no vertical interpolation
 			t_red    <= lbfo2[14:11];
 			t_green  <= lbfo2[9:6];
@@ -197,7 +207,7 @@ begin
 end
 
 //scanlines effect
-`ifdef SCANLINES 
+`ifndef DISABLE_SCANLINES
 always @(posedge clk28m)
 	if (dblscan && scanline_ena && scanline == 2'b10)       // Black, every second line is black
 		{red_out,green_out,blue_out} <= 12'h000;
@@ -215,7 +225,8 @@ always @(posedge clk28m)
 	end else
 		{red_out,green_out,blue_out} <= {t_red,t_green,t_blue};
 `else
-always @(t_red or t_green or t_blue)
+// keep the output register, so the timing is identical to scanline mode "None"
+always @(posedge clk28m)
 	{red_out,green_out,blue_out} <= {t_red,t_green,t_blue};
 `endif
 

@@ -1,5 +1,6 @@
 set board "tang_nano20k_020"
 set config "amiga"
+set xml_define_file "tang/nano20k/top_020.sv"
 source scripts/update_xml.tcl
 
 set_device GW2AR-LV18QN88C8/I7 -name GW2AR-18C
