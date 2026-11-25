@@ -271,6 +271,10 @@ module minimig
 	output [15:0] toccata_aud_left,
 	output [15:0] toccata_aud_right,
 `endif
+
+`ifdef ENABLE_NANOPORT
+	input	      ext_int2,    // nanoport network card interrupt (level, INT2/PORTS)
+`endif
  
 `ifndef DISABLE_IDE
 	output	      ide_ena,
@@ -525,9 +529,17 @@ paula PAULA1
 	.strhor(strhor_paula),
 	.vblint(vbl_int),
  `ifndef DISABLE_IDE
+ `ifdef ENABLE_NANOPORT
+	.int2(int2|(ide_fast ? ide_ext_irq : gayle_irq)|ext_int2),
+ `else
 	.int2(int2|(ide_fast ? ide_ext_irq : gayle_irq)),
+ `endif
 `else
+ `ifdef ENABLE_NANOPORT
+	.int2(int2|ext_int2),
+ `else
 	.int2(int2), 
+ `endif
  `endif
 	.int3(int3),
 	.int6(int6 | int6_toccata),
