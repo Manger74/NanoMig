@@ -75,6 +75,7 @@ add_file hdmi/serializer.sv
 add_file hdmi/source_product_description_info_frame.sv
 add_file hdmi/tmds_channel.sv
 add_file misc/mcu_spi.v
+add_file misc/nanoport.v
 add_file misc/sysctrl.v
 add_file misc/hid.v
 add_file misc/osd_u8g2.v
