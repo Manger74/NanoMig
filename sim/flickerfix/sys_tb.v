@@ -1,12 +1,13 @@
 //
 // sys_tb.v - Amber + flickerfix + sdram.sv + sdr_chip_model
-// usage: ./sys_run.sh [FF_EN] [CHIP_PCT] [BURST] [SYNC_DLY]
+// usage: ./sys_run.sh [FF_EN] [CHIP_PCT] [BURST] [SYNC_DLY] [P2_BANK1]
 //
 // - PAL interlace video with a static frame, checked as in ff_tb.v
 // - port 1 (chipset): random reads/writes to chip ram in CHIP_PCT % of the
 //   7 MHz slots, data checked against a shadow copy
 // - port 2 (cpu): back to back random reads/writes to fast ram right below
-//   and above the field buffer, data checked, throughput counted
+//   and above the field buffer and (P2_BANK1) in another bank, data checked,
+//   throughput counted
 // - sdram command timing checked per bank (tRCD, tRAS, tRP, tRC, tWR),
 //   bus contention checked
 //
@@ -19,6 +20,7 @@ parameter CHIP_PCT = 45;
 parameter BURST    = 0;     // CHIP48_BURST: 1 = burst 4 mode register (020/aga)
 parameter SYNC_DLY = 4;
 parameter FIELDS   = 6;
+parameter P2_BANK1 = 1;   // port 2 also in sdram bank 1 ($200000), not only next to the field buffer
 
 localparam X0 = 88, W = 832, K0 = 16, H = 300;
 
@@ -179,8 +181,10 @@ always @(posedge clk28) if (ready) begin
     c2_cs <= 0;
     c2_n = c2_n + 1;
   end else if (!c2_cs) begin
-    // fast ram words right below $700000 and right above $780000
-    c2_a  = ($urandom % 2) ? 23'h37F000 + ($urandom % 4096) : 23'h3C0000 + ($urandom % 4096);
+    // fast ram words right below $700000 and right above $780000 (bank 3),
+    // with P2_BANK1 also at $200000 (bank 1)
+    c2_a  = (P2_BANK1 && ($urandom % 2)) ? 23'h100000 + ($urandom % 4096) :
+            ($urandom % 2) ? 23'h37F000 + ($urandom % 4096) : 23'h3C0000 + ($urandom % 4096);
     c2_we = $urandom % 2;
     c2_ds = c2_we ? ($urandom % 3) : 2'b00;
     c2_din = $urandom;

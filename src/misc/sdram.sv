@@ -305,6 +305,7 @@ reg         ff_cyc;              // current slot belongs to the flicker fixer
 reg  [3:0]  ff_t;
 reg         ff_cwe;              // ... and writes
 reg  [CAS_WIDTH-3:0] ff_col;     // column / 4
+reg            [1:0] ff_ba;      // bank of the job, the RAS state loads sd_ba with port requests
 reg  [7:0]  ff_ix;               // line buffer index / 4
 reg  [31:0] ff_wd;               // write data
 
@@ -467,6 +468,7 @@ always @(posedge clk) begin
           ff_ix      <= ff_i[9:2];
           sd_addr    <= ff_a32[RAS_WIDTH+CAS_WIDTH-1:CAS_WIDTH];
           sd_ba      <= ff_a32[RAS_WIDTH+CAS_WIDTH+1:RAS_WIDTH+CAS_WIDTH];
+          ff_ba      <= ff_a32[RAS_WIDTH+CAS_WIDTH+1:RAS_WIDTH+CAS_WIDTH];
           sd_cmd     <= CMD_ACTIVE;
 `endif
         end else if (p2_cs) begin
@@ -526,6 +528,7 @@ always @(posedge clk) begin
       if (ff_t >= 4'd2 && ff_t <= 4'd5) begin
         sd_cmd  <= CMD_WRITE;
         sd_addr <= ff_cas(3'(ff_t - 4'd2), ff_t == 4'd5);
+        sd_ba   <= ff_ba;
         ff_wd   <= ff_wb_q;
         sd_dq   <= 1'b1;
       end
@@ -533,6 +536,9 @@ always @(posedge clk) begin
       if (CHIP48_BURST ? (ff_t == 4'd2 || ff_t == 4'd6) : (ff_t >= 4'd2 && ff_t <= 4'd9)) begin
         sd_cmd  <= CMD_READ;
         sd_addr <= ff_cas(3'(ff_t - 4'd2), CHIP48_BURST ? ff_t == 4'd6 : ff_t == 4'd9);
+        // burst length 1: the READ of cycle 9 is set in the RAS state, which
+        // already loads sd_ba for a waiting port request
+        sd_ba   <= ff_ba;
       end
       // read data, CAS latency 2
       if (ff_t >= 4'd5) begin
