@@ -13,6 +13,8 @@ DEFINES += -DENABLE_CACHE
 DEFINES += -DCHIPRAM_CACHE
 DEFINES += -DCPU_SLOW14
 DEFINES += -DDENISE_EBR
+# nanoport network card (no Companion attached), test with test_rom/nanoport_test.s
+#DEFINES += -DENABLE_NANOPORT
 #DEFINES += -DNO_COMPANION -DIMAGE_SIZE=1048576 -DIMAGE_INDEX=0
 
 # the original fx68k won't simulate. Thus we use this special version for simulation
@@ -37,7 +39,7 @@ MINIMIG_FILES+=../minimig/Amber.v userio.v
 TB=nanomig_tb
 
 MISC_DIR=../src/misc
-MISC_FILES=sd_card.v sd_rw.v sdcmd_ctrl.v sdram.sv
+MISC_FILES=sd_card.v sd_rw.v sdcmd_ctrl.v sdram.sv nanoport.v
 
 VERILATOR_DIR=/usr/local/share/verilator/include
 VERILATOR_FILES=verilated.cpp verilated_vcd_c.cpp verilated_threads.cpp
