@@ -6,7 +6,8 @@
 create_clock -name clk85 -period 11.684 -waveform {0 5.848} [get_pins {amigaclks/sysclk_inst/CLKOUT}]
 create_clock -name clk_hdmi -period 7 -waveform {0 3} [get_nets {clk_pixel_x5}] -add
 create_clock -name clk_osc -period 37 -waveform {0 18} [get_ports {clk}] -add
-create_clock -name clk_spi -period 14.085 -waveform {0 7.04} [get_ports {mspi_clk}] -add
+// no clock on the mspi_clk port: it carries the inverted clk_28m now (before,
+// a clock defined there was also applied to the sdram clock net)
 // The MCU SPI clock behind the spi_ext multiplexer (spi_io_clk in top_020.sv)
 // is a clock of its own, synthesis places the mux in mcu/n23_s1. Without this
 // constraint the analyzer assumes 100 MHz for it. 20ns leaves margin above the

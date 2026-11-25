@@ -1088,12 +1088,17 @@ sdram #(
 `endif
 );
 
-// run the flash a 85MHz. This is only used at power-up to copy kickstart
-// from flash to sdram
-assign mspi_clk = clk_85m_shifted;   
+// The flash is only used at power-up to copy kickstart to sdram. It runs at
+// 28.5MHz with the inverted clk_28m as flash clock: data to the flash changes
+// half a clock before the flash samples it, data from the flash is sampled a
+// full clock after the flash changed it. This leaves ~15ns margin each way for
+// the unconstrained pad and routing delays. At 85MHz the copy only worked
+// within a window of a few ns of these delays, so it depended on the
+// placement of the build.
+assign mspi_clk = ~clk_28m;
 flash flash (
-    .clk       ( clk_85m     ),
-    .resetn    ( rst_85m_n   ),
+    .clk       ( clk_28m     ),
+    .resetn    ( rst_28m_n   ),
     .ready     ( flash_ready ),
 
     .address   ( flash_addr  ),
