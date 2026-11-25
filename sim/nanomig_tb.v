@@ -303,6 +303,20 @@ nanomig nanomig (
 		 .sdc_byte_out_data(sdc_byte_out_data),
 		 
 		 .uart_tx(uart_tx),
+
+`ifdef ENABLE_NANOPORT
+		 // nanoport network card: no FPGA Companion in the simulation
+		 .np_spi_strobe(1'b0),
+		 .np_spi_start(1'b0),
+		 .np_spi_din(8'h00),
+		 .np_spi_dout(),
+		 .np_mcu_int(),
+		 .np_mcu_iack(1'b0),
+		 .np_sck(1'b0),
+		 .np_sck_rd(1'b0),
+		 .np_sck_idx(11'd0),
+		 .np_sck_q(),
+`endif
 		 
 		 // (s(d))ram interface
 		 .ram_data(ram_data_i),       // sram data bus
