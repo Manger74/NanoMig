@@ -8,7 +8,7 @@
 // double buffered line buffer, the pixel side reads the line buffer and
 // produces RGB for the hdmi module. The picture can be 8 bit (palette) or 16
 // bit (RGB565/RGB555), repeated up to 4x horizontally/vertically and placed
-// inside the 800x600 display by a viewport (units of 16 pixels / 16 lines).
+// inside the 1024x768 display by a viewport (units of 16 pixels / 16 lines).
 //
 // The register layout is the one of the MiSTle MiniMig RTG implementation
 // (registers at $B80100, palette at $B80400) so its P96 driver can be reused:

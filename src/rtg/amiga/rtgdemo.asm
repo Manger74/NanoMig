@@ -1,8 +1,8 @@
 ; rtgdemo - NanoMig RTG bring-up test (needs the "rtg" core variant)
 ;
 ; Allocates a 400x300 8 bit framebuffer in fast ram, fills it with an xor
-; pattern, programs a palette and switches the hdmi output to the 800x600 rtg
-; mode with 2x2 pixel doubling. Press the left mouse button to switch back to
+; pattern, programs a palette and switches the hdmi output to the 1024x768 rtg
+; mode with 2x2 pixel doubling (upper left 800x592 of the display). Press the left mouse button to switch back to
 ; the normal Amiga video and exit.
 ;
 ; Assemble with vasm:  vasmm68k_mot -Fhunkexe -o rtgdemo rtgdemo.asm

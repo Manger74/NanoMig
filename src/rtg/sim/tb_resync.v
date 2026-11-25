@@ -51,7 +51,7 @@ initial begin
   check(n >= 1, "vreset after power-up");
   n0 = n; frames(3);
   check(n == n0, "no vreset while nothing changes");
-  // rtg on: 800x600, pll re-locks
+  // rtg on: 1024x768, pll re-locks
   @(posedge clk) video_mode <= 2'b10; repeat(3) @(posedge clk); video_locked <= 1'b0;
   repeat(2000) @(posedge clk); video_locked <= 1'b1;
   frames(4);

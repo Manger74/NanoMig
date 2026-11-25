@@ -46,7 +46,7 @@ module hdmi
 
 `ifdef HDMI_VIDEO_MODES
     // 2'b01 (or 2'b00): Amiga video timing as before
-    // 2'b10: 800x600@60 (or 1024x768, see VMODE_1024_*), free running, ignores reset sync
+    // 2'b10: 1024x768@60 (CVT reduced blanking), free running, ignores reset sync
     input logic [1:0]                 video_mode,
 `endif
     input logic                       pal_mode,    // 1 for pal timing
@@ -107,19 +107,11 @@ wire [102:0]  timing_amiga = pal_mode?{  htiming0, vtiming0, cea0 }:
 
 `ifdef HDMI_VIDEO_MODES
 //                                  start     frame   screen s_start s_len  | frame  screen vs_start vs_len | cea
-`ifdef VMODE_1024_VESA
-wire [102:0] timing_800x600  = { 11'd0, 11'd1344, 11'd1024, 11'd24, 11'd136, 10'd806, 10'd768, 10'd3, 10'd6, 8'd0 }; // 1024x768 VESA DMT, -/- sync
-localparam [1:0] INVERT_MODE2 = 2'b11;
-`elsif VMODE_1024_RB
-wire [102:0] timing_800x600  = { 11'd0, 11'd1184, 11'd1024, 11'd48, 11'd32,  10'd802, 10'd768, 10'd3, 10'd4, 8'd0 }; // 1024x768 CVT-RB (v back porch 27 for 60Hz), +h/-v
+wire [102:0] timing_1024x768 = { 11'd0, 11'd1184, 11'd1024, 11'd48, 11'd32,  10'd802, 10'd768, 10'd3, 10'd4, 8'd0 }; // 1024x768 CVT-RB (v back porch 27 for 60Hz), +h/-v
 localparam [1:0] INVERT_MODE2 = 2'b10;
-`else
-wire [102:0] timing_800x600  = { 11'd0, 11'd1056, 11'd800,  11'd40, 11'd128, 10'd628, 10'd600, 10'd1, 10'd4, 8'd0 }; // VESA, no CEA VIC
-localparam [1:0] INVERT_MODE2 = 2'b00;
-`endif
 
 wire         ext_mode = video_mode[1];
-wire [102:0] timing = ext_mode ? timing_800x600 : timing_amiga;
+wire [102:0] timing = ext_mode ? timing_1024x768 : timing_amiga;
 `else
 wire         ext_mode = 1'b0;
 wire [102:0] timing = timing_amiga;
@@ -143,8 +135,8 @@ wire [9:0] vsync_pulse_size   = timing[17: 8];
 
 wire [7:0] cea                = timing[7:0]; 
    
-// Amiga timing and PAL/NTSC CEA modes use negative sync, 800x600 positive sync,
-// 1024x768 as given above (invert[0] hsync, invert[1] vsync)
+// Amiga timing and PAL/NTSC CEA modes use negative sync, 1024x768 +h/-v
+// (invert[0] hsync, invert[1] vsync)
 `ifdef HDMI_VIDEO_MODES
 assign invert = ext_mode ? INVERT_MODE2 : 2'b11;
 `else
@@ -171,14 +163,9 @@ always_comb begin
 end
 
 // Only used for the width of the CTS counter in the audio clock regeneration
-// packet (CTS = pixel clock * N / (128 * fs) plus 10%: 65 MHz (1024x768 VESA) needs
-// 17 bits, up to 57 MHz 16 bits)
+// packet (CTS = pixel clock * N / (128 * fs) plus 10%: 57 MHz (1024x768) needs 16 bits)
 `ifdef HDMI_VIDEO_MODES
-`ifdef VMODE_1024_VESA
-localparam real VIDEO_RATE = 65E6;
-`else
 localparam real VIDEO_RATE = 57E6;
-`endif
 `else
 localparam real VIDEO_RATE = 32E6;
 `endif
@@ -214,7 +201,7 @@ logic [5:0] control_data = 6'd0;
 logic [11:0] data_island_data = 12'd0;
 
 `ifdef HDMI_EXT_TEST_PATTERN
-// test pattern for the 800x600 / 1024x768 modes: white frame around the active area,
+// test pattern for the 1024x768 mode: white frame around the active area,
 // grey 64x64 grid (squares must look square) and red/green gradients
 wire ext_border = cx == 11'd0 || cx == screen_width - 1'b1 || cy == 10'd0 || cy == screen_height - 1'b1;
 wire ext_grid   = cx[5:0] == 6'd0 || cy[5:0] == 6'd0;

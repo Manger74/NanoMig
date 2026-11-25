@@ -123,16 +123,16 @@ wire pll_lock;
 wire video_locked;
 
 // HDMI video mode: 2'b01 = native Amiga video (28.5MHz pixel clock),
-// 2'b10 = 800x600@60 (see amigaclks.v and hdmi.sv).
-// Until RTG takes over, the extended modes are only selectable for test builds
-// (define RTG_TEST_800X600 together with HDMI_VIDEO_MODES).
+// 2'b10 = 1024x768@60, CVT reduced blanking, 57MHz (see amigaclks.v and hdmi.sv).
+// Until RTG takes over, the extended mode is only selectable for test builds
+// (define RTG_TEST_1024 together with HDMI_VIDEO_MODES).
 `ifdef ENABLE_RTG
 wire       rtg_enable;     // rtg display requested by the cpu (register $B80110)
 `endif
-`ifdef RTG_TEST_800X600
+`ifdef RTG_TEST_1024
 wire [1:0] video_mode = 2'b10;
 `elsif ENABLE_RTG
-// the rtg driver switches to 800x600 by enabling the rtg display
+// the rtg driver switches to 1024x768 by enabling the rtg display
 wire [1:0] video_mode = rtg_enable ? 2'b10 : 2'b01;
 `else
 wire [1:0] video_mode = 2'b01;
@@ -1142,18 +1142,11 @@ end
 `endif
 
 `ifdef HDMI_VIDEO_MODES
-// pixel clock depends on the video mode: 28.5MHz (native) or the extended mode (39.9, 57 or 65MHz)
+// pixel clock depends on the video mode: 28.5MHz (native) or 57MHz (1024x768)
 localparam integer AUDIO_ACC_WIDTH = 27;
 localparam [AUDIO_ACC_WIDTH-1:0] AUDIO_INC_NATIVE = ((AUDIO_ACC_WIDTH*2)'(AUDIO_RATE) <<< AUDIO_ACC_WIDTH) / 28500000;
-`ifdef VMODE_1024_VESA
-localparam integer PIXEL_MODE2 = 64980000;   // 1024x768 VESA
-`elsif VMODE_1024_RB
-localparam integer PIXEL_MODE2 = 57000000;   // 1024x768 reduced blanking
-`else
-localparam integer PIXEL_MODE2 = 39900000;   // 800x600
-`endif
-localparam [AUDIO_ACC_WIDTH-1:0] AUDIO_INC_800    = ((AUDIO_ACC_WIDTH*2)'(AUDIO_RATE) <<< AUDIO_ACC_WIDTH) / PIXEL_MODE2;
-wire [AUDIO_ACC_WIDTH-1:0] AUDIO_INC = video_mode_pix[1] ? AUDIO_INC_800 : AUDIO_INC_NATIVE;
+localparam [AUDIO_ACC_WIDTH-1:0] AUDIO_INC_1024   = ((AUDIO_ACC_WIDTH*2)'(AUDIO_RATE) <<< AUDIO_ACC_WIDTH) / 57000000;
+wire [AUDIO_ACC_WIDTH-1:0] AUDIO_INC = video_mode_pix[1] ? AUDIO_INC_1024 : AUDIO_INC_NATIVE;
 `else
 localparam integer AUDIO_ACC_WIDTH = $clog2(`PIXEL_CLOCK + AUDIO_RATE);
 
@@ -1325,16 +1318,10 @@ hdmi #(
 );
 
 `ifdef ENABLE_RTG
-// RTG scanout. The 800x600 profile is what the video mode logic selects when
-// the rtg display is enabled.
+// RTG scanout on the 1024x768 raster the video mode logic selects when the
+// rtg display is enabled.
 rtg_video #(
-`ifdef VMODE_1024_VESA
-  .H_TOTAL(1344), .H_ACTIVE(1024), .V_TOTAL(806), .V_ACTIVE(768)
-`elsif VMODE_1024_RB
   .H_TOTAL(1184), .H_ACTIVE(1024), .V_TOTAL(802), .V_ACTIVE(768)
-`else
-  .H_TOTAL(1056), .H_ACTIVE(800), .V_TOTAL(628), .V_ACTIVE(600)
-`endif
 ) rtg_video (
   .clk_bus   ( clk_28m     ),
   .reset_bus ( rst_28m || rtg_reset ),

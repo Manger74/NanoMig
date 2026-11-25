@@ -1,26 +1,10 @@
 `timescale 1ns/1ps
-// display raster: 800x600 (default) or 1024x768 (define VMODE_1024_RB or VMODE_1024_VESA)
-`ifdef VMODE_1024_VESA
-  `define VMODE_1024
-  `define W 1024
-  `define H 768
-  `define HT 1344
-  `define VT 806
-  `define TPIX 7.695
-`elsif VMODE_1024_RB
-  `define VMODE_1024
-  `define W 1024
-  `define H 768
-  `define HT 1184
-  `define VT 802
-  `define TPIX 8.772
-`else
-  `define W 800
-  `define H 600
-  `define HT 1056
-  `define VT 628
-  `define TPIX 12.53
-`endif
+// display raster: 1024x768, CVT reduced blanking (the only extended mode of the core)
+`define W 1024
+`define H 768
+`define HT 1184
+`define VT 802
+`define TPIX 8.772
 // full chain test: cpu register writes -> rtg_video -> sdram scanout port -> sdram model, hdmi-like capture
 module tb_rtg;
   reg clk_mem = 0, clk_pix = 0, clk_bus = 0;
@@ -207,7 +191,6 @@ always #(`TPIX) if (pix_run) clk_pix = ~clk_pix;   // pixel clock of the raster
     fb_to_model();
     repeat (4) @(posedge clk_bus);
 
-`ifdef VMODE_1024
     // test 1: 8 bit 1024x768 1x1, whole screen, stride 1024: needs 43% of the slots
     c_bpp = 8; c_fmt = 1; c_hrep = 1; c_vrep = 1; c_hs = 0; c_he = 64; c_vs = 0; c_ve = 48;
     c_stride_b = 1024; c_bursts = 64; c_base = FB_BASE;
@@ -255,48 +238,6 @@ always #(`TPIX) if (pix_run) clk_pix = ~clk_pix;   // pixel clock of the raster
     bus_write(11'h110, 0); repeat (200) @(posedge clk_bus); bus_write(11'h110, 1);
     program_and_check(0);
     expect_overrun = 0;
-`else
-    // test 1: 8 bit 400x300, 2x2 on the whole 800x600
-    c_bpp = 8; c_hrep = 2; c_vrep = 2; c_hs = 0; c_he = 50; c_vs = 0; c_ve = 37;
-    c_stride_b = 512; c_bursts = 25; c_fmt = 1; c_base = FB_BASE;
-    // image layout for this test: stride 512
-    for (sy = 0; sy < 300; sy = sy + 1) for (sx = 0; sx < 512; sx = sx + 1) fb[sy*512 + sx] = (sx*3 + sy*7 + (sx>>4)*13 + (sy>>3)*5) & 255;
-    fb_to_model();
-    program_and_check(0);
-
-    // test 2: 8 bit 640x480 1x1 centered, stride 640
-    c_hrep = 1; c_vrep = 1; c_hs = 5; c_he = 45; c_vs = 4; c_ve = 34;
-    c_stride_b = 640; c_bursts = 40;
-    for (sy = 0; sy < 480; sy = sy + 1) for (sx = 0; sx < 640; sx = sx + 1) fb[sy*640 + sx] = (sx*5 + sy*3 + (sx>>3)) & 255;
-    fb_to_model();
-    program_and_check(0);
-
-    // test 3: 16 bit RGB565 320x240 2x2 -> 640x480, offset base, stride 768
-    c_bpp = 16; c_fmt = 1; c_hrep = 2; c_vrep = 2; c_hs = 5; c_he = 45; c_vs = 4; c_ve = 34;
-    c_stride_b = 768; c_bursts = 40; c_base = FB_BASE + 32'h1000;
-    for (sy = 0; sy < 240; sy = sy + 1) for (sx = 0; sx < 384; sx = sx + 1) begin
-      fb['h1000 + sy*768 + sx*2]     = (sx*7 + sy) & 255;
-      fb['h1000 + sy*768 + sx*2 + 1] = (sx + sy*11) & 255;
-    end
-    fb_to_model();
-    program_and_check(0);
-
-    // test 4: 16 bit RGB555, 1x horizontal, 3x vertical stretch (odd repeat)
-    c_bpp = 16; c_fmt = 2; c_hrep = 1; c_vrep = 3; c_hs = 0; c_he = 50; c_vs = 0; c_ve = 37;
-    c_stride_b = 1600; c_bursts = 100; c_base = FB_BASE + 32'h20000;
-    for (sy = 0; sy < 200; sy = sy + 1) for (sx = 0; sx < 800; sx = sx + 1) begin
-      fb['h20000 + sy*1600 + sx*2]     = (sx*3 + sy) & 255;
-      fb['h20000 + sy*1600 + sx*2 + 1] = (sx + sy*5) & 255;
-    end
-    fb_to_model();
-    bg = 0;
-    $display("-- no background traffic");
-    program_and_check(0);
-    bg = 1;
-    $display("-- with heavy background traffic (50%% of the slots taken by port 1)");
-    bus_write(11'h110, 0); repeat (200) @(posedge clk_bus); bus_write(11'h110, 1);
-    program_and_check(0);
-`endif
 
     // switch off like an amiga reset while the pixel clock stands still (pll switch):
     // the status must not report an active scanout, otherwise the driver's
