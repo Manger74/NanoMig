@@ -17,6 +17,7 @@
 // `define ENABLE_CACHE // MiSTer cpu cache between the cpu and the sdram (cached kickstart + fast ram)
 // `define CHIPRAM_CACHE
 // `define DISABLE_IDE  // v32 experiment: cache + ide together
+// `define DISABLE_IDE1 // only remove the second IDE port (ide1), frees its 16kB buffer (8 BRAM)
 // `define NO_WS2812   // drop the rgb status led to make room for cache + ide
 // `define DENISE_EBR   // block ram based bitplane and sprite buffers, saves logic
 `define DISABLE_ROM_LOADER // drop the rom loader to make room 
